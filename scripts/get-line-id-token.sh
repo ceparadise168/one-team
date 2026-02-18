@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SHOW_HELP=false
-OPEN_BROWSER=false
 WRITE_ENV=false
 PRINT_AUTH_URL_ONLY=false
 AUTH_CODE_INPUT=""
@@ -16,8 +15,8 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --open)
-      OPEN_BROWSER=true
-      shift
+      echo "--open is no longer supported. Open the URL manually on your phone/LINE in-app browser." >&2
+      exit 1
       ;;
     --write-env)
       WRITE_ENV=true
@@ -48,7 +47,6 @@ Usage:
   ./scripts/get-line-id-token.sh [options]
 
 Options:
-  --open            Open authorization URL in default browser (macOS/Linux desktops).
   --code <value>    Provide authorization code (or full callback URL) non-interactively.
   --write-env       Write LINE_ID_TOKEN to .env after successful exchange.
   --print-auth-url  Print authorization URL and exit.
@@ -144,17 +142,11 @@ AUTH_URL="https://access.line.me/oauth2/v2.1/authorize?response_type=code&client
 
 echo "Authorization URL:"
 echo "$AUTH_URL"
+echo
+echo "Open this URL manually on your phone (LINE in-app browser recommended)."
 
 if [[ "$PRINT_AUTH_URL_ONLY" == "true" ]]; then
   exit 0
-fi
-
-if [[ "$OPEN_BROWSER" == "true" ]]; then
-  if command -v open >/dev/null 2>&1; then
-    open "$AUTH_URL" >/dev/null 2>&1 || true
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$AUTH_URL" >/dev/null 2>&1 || true
-  fi
 fi
 
 parse_code_input() {

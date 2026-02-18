@@ -280,7 +280,7 @@ Quick helper to fetch `LINE_ID_TOKEN`:
 # .env must include:
 # LOGIN_CHANNEL_ID, LOGIN_CHANNEL_SECRET, LINE_LOGIN_REDIRECT_URI
 
-./scripts/get-line-id-token.sh --open --write-env
+./scripts/get-line-id-token.sh --write-env
 ```
 
 The script prints an authorization URL, asks you to paste callback URL (or code), exchanges token, verifies `id_token`, and writes `LINE_ID_TOKEN` into `.env`.

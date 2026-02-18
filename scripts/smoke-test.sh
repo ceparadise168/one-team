@@ -81,6 +81,8 @@ RECIPIENT_EMAIL="${RECIPIENT_EMAIL:-user@acme.test}"
 EMPLOYEE_ID="${EMPLOYEE_ID:-E001}"
 TTL_MINUTES="${TTL_MINUTES:-60}"
 RUN_OFFBOARD_CHECK="${RUN_OFFBOARD_CHECK:-true}"
+OFFBOARD_VERIFY_RETRIES="${OFFBOARD_VERIFY_RETRIES:-10}"
+OFFBOARD_VERIFY_INTERVAL_SECONDS="${OFFBOARD_VERIFY_INTERVAL_SECONDS:-2}"
 
 api_post_admin() {
   local path="$1"
@@ -210,12 +212,27 @@ if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
   api_post_admin "/v1/admin/tenants/$TENANT_ID/employees/$EMPLOYEE_ID/offboard" \
     '{"actorId":"hr-admin"}' >/dev/null
 
-  VERIFY_AFTER="$(
-    api_post_scanner "$DIGITAL_PAYLOAD"
-  )"
-  VALID_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.valid')"
-  REASON_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.reasonCode')"
+  VALID_AFTER="true"
+  REASON_AFTER="UNKNOWN"
+  for ((attempt = 1; attempt <= OFFBOARD_VERIFY_RETRIES; attempt += 1)); do
+    VERIFY_AFTER="$(api_post_scanner "$DIGITAL_PAYLOAD")"
+    VALID_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.valid')"
+    REASON_AFTER="$(echo "$VERIFY_AFTER" | jq -r '.reasonCode // "UNKNOWN"')"
+
+    if [[ "$VALID_AFTER" == "false" ]]; then
+      break
+    fi
+
+    if [[ "$attempt" -lt "$OFFBOARD_VERIFY_RETRIES" ]]; then
+      sleep "$OFFBOARD_VERIFY_INTERVAL_SECONDS"
+    fi
+  done
+
   echo "  scanner valid after offboard: $VALID_AFTER (reason=$REASON_AFTER)"
+  if [[ "$VALID_AFTER" != "false" ]]; then
+    echo "Offboard verification failed: scanner payload still valid after retries." >&2
+    exit 1
+  fi
 else
   echo "[8/8] Offboard check skipped (RUN_OFFBOARD_CHECK=false)."
 fi

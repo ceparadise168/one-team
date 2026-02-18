@@ -23,6 +23,10 @@ load_env_file() {
       continue
     fi
 
+    if [[ -n "${!key+x}" ]]; then
+      continue
+    fi
+
     if [[ "$value" =~ ^\".*\"$ ]]; then
       value="${value:1:${#value}-2}"
     elif [[ "$value" =~ ^\'.*\'$ ]]; then

@@ -82,6 +82,10 @@ load_env_file() {
       continue
     fi
 
+    if [[ -n "${!key+x}" ]]; then
+      continue
+    fi
+
     if [[ "$value" =~ ^\".*\"$ ]]; then
       value="${value:1:${#value}-2}"
     elif [[ "$value" =~ ^\'.*\'$ ]]; then
@@ -234,8 +238,8 @@ VERIFY_JSON="$(request_form_json "https://api.line.me/oauth2/v2.1/verify" \
   --data-urlencode "id_token=$ID_TOKEN" \
   --data-urlencode "client_id=$LOGIN_CHANNEL_ID")"
 
-AUD="$(echo "$VERIFY_JSON" | jq -r '.aud // \"\"')"
-SUB="$(echo "$VERIFY_JSON" | jq -r '.sub // \"\"')"
+AUD="$(echo "$VERIFY_JSON" | jq -r '.aud // ""')"
+SUB="$(echo "$VERIFY_JSON" | jq -r '.sub // ""')"
 EXP="$(echo "$VERIFY_JSON" | jq -r '.exp // 0')"
 EXP_HUMAN="$(python3 - <<'PY' "$EXP"
 import datetime, sys

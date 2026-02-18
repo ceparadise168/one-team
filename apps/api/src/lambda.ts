@@ -1,6 +1,12 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { z } from 'zod';
-import { ConflictError, NotFoundError, ValidationError } from './errors.js';
+import {
+  ConflictError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError
+} from './errors.js';
+import { requireEmployeePrincipal } from './http/auth-middleware.js';
 import { jsonResponse } from './http/response.js';
 import { StubLineAuthClient } from './line/line-auth-client.js';
 import { StubLinePlatformClient } from './line/line-platform-client.js';
@@ -11,11 +17,16 @@ import {
   InMemoryEmployeeEnrollmentRepository,
   InMemoryInvitationRepository
 } from './repositories/invitation-binding-repository.js';
+import {
+  InMemoryRefreshSessionRepository,
+  InMemoryRevokedJtiRepository
+} from './repositories/auth-repository.js';
 import { InMemoryTenantRepository } from './repositories/tenant-repository.js';
 import {
   AwsSecretsManagerLineCredentialStore,
   InMemoryLineCredentialStore
 } from './security/line-credential-store.js';
+import { AuthSessionService } from './services/auth-session-service.js';
 import { InvitationBindingService } from './services/invitation-binding-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 
@@ -62,6 +73,10 @@ const bindCompleteSchema = z.object({
   bindingCode: z.string().min(1)
 });
 
+const refreshSessionSchema = z.object({
+  refreshToken: z.string().min(1)
+});
+
 const tenantRepository = new InMemoryTenantRepository();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
@@ -81,19 +96,34 @@ const onboardingService = new TenantOnboardingService(
   }
 );
 
+const employeeBindingRepository = new InMemoryEmployeeBindingRepository();
+
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
   new InMemoryInvitationRepository(),
   new InMemoryBatchInviteJobRepository(),
   new InMemoryBindingSessionRepository(),
   new InMemoryEmployeeEnrollmentRepository(),
-  new InMemoryEmployeeBindingRepository(),
+  employeeBindingRepository,
   new StubLineAuthClient(),
   {
     inviteBaseUrl: process.env.INVITE_BASE_URL ?? 'https://app.example.com/invite',
     sessionTtlMinutes: 10,
     maxBindingAttempts: 5,
     lockoutMinutes: 15,
+    now: () => new Date()
+  }
+);
+
+const authSessionService = new AuthSessionService(
+  new InMemoryRefreshSessionRepository(),
+  new InMemoryRevokedJtiRepository(),
+  employeeBindingRepository,
+  {
+    issuer: 'one-team-api',
+    accessTokenTtlSeconds: 10 * 60,
+    refreshSessionTtlSeconds: 7 * 24 * 60 * 60,
+    accessTokenSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-secret-change-me',
     now: () => new Date()
   }
 );
@@ -180,8 +210,41 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     if (method === 'POST' && path === '/v1/public/bind/complete') {
       const payload = bindCompleteSchema.parse(parseBody(event));
-      const result = await invitationBindingService.completeBinding(payload);
-      return jsonResponse(200, result);
+      const bindingResult = await invitationBindingService.completeBinding(payload);
+
+      const tokens = await authSessionService.issueEmployeeSession({
+        tenantId: bindingResult.tenantId,
+        lineUserId: bindingResult.lineUserId,
+        employeeId: bindingResult.employeeId
+      });
+
+      return jsonResponse(200, {
+        ...bindingResult,
+        auth: tokens
+      });
+    }
+
+    if (method === 'POST' && path === '/v1/public/auth/refresh') {
+      const payload = refreshSessionSchema.parse(parseBody(event));
+      const tokens = await authSessionService.refreshEmployeeSession(payload);
+      return jsonResponse(200, tokens);
+    }
+
+    const meMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/profile$/);
+    if (method === 'GET' && meMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: meMatch[1]
+      });
+
+      return jsonResponse(200, {
+        tenantId: principal.tenantId,
+        employeeId: principal.employeeId,
+        lineUserId: principal.lineUserId,
+        sessionId: principal.sessionId,
+        tokenExpiresAtEpochSeconds: principal.exp
+      });
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` });
@@ -191,6 +254,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         error: 'Validation failed',
         details: error.issues
       });
+    }
+
+    if (error instanceof UnauthorizedError) {
+      return jsonResponse(401, { error: error.message });
     }
 
     if (error instanceof ConflictError) {

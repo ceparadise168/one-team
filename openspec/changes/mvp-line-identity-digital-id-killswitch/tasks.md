@@ -25,9 +25,9 @@
 
 ## 5. Authentication and session security
 
-- [ ] 5.1 Implement access JWT issuance (10-minute TTL) and refresh session store (7-day TTL)
-- [ ] 5.2 Implement token/session revocation checks using session state + jti revocation list
-- [ ] 5.3 Implement authorization middleware that always validates tenant scope and employment status
+- [x] 5.1 Implement access JWT issuance (10-minute TTL) and refresh session store (7-day TTL)
+- [x] 5.2 Implement token/session revocation checks using session state + jti revocation list
+- [x] 5.3 Implement authorization middleware that always validates tenant scope and employment status
 
 ## 6. Digital employee ID and scanner verification
 

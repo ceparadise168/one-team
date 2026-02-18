@@ -112,9 +112,10 @@ Edit `.env` and set at least:
 2. `AWS_ACCOUNT_ID_DEV=<your-12-digit-id>`
 3. `LINE_INTEGRATION_MODE=real`
 4. `USE_AWS_SECRETS_MANAGER=true`
-5. `ACCESS_TOKEN_SECRET=<strong-random-secret>`
-6. `DIGITAL_ID_SIGNING_SECRET=<strong-random-secret>`
-7. `SCANNER_API_KEY=<strong-random-key>`
+5. `USE_DYNAMODB_REPOSITORIES=true`
+6. `ACCESS_TOKEN_SECRET=<strong-random-secret>`
+7. `DIGITAL_ID_SIGNING_SECRET=<strong-random-secret>`
+8. `SCANNER_API_KEY=<strong-random-key>`
 
 Note:
 - `PUBLIC_API_BASE_URL` can be filled after stack deploy.

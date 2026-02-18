@@ -11,23 +11,46 @@ import { requireEmployeePrincipal } from './http/auth-middleware.js';
 import { jsonResponse } from './http/response.js';
 import { RealLineAuthClient, StubLineAuthClient } from './line/line-auth-client.js';
 import { RealLinePlatformClient, StubLinePlatformClient } from './line/line-platform-client.js';
-import { InMemoryAccessControlRepository } from './repositories/access-control-repository.js';
+import { AccessControlRepository, InMemoryAccessControlRepository } from './repositories/access-control-repository.js';
 import {
+  BatchInviteJobRepository,
+  BindingSessionRepository,
+  EmployeeBindingRepository,
+  EmployeeEnrollmentRepository,
   InMemoryBatchInviteJobRepository,
   InMemoryBindingSessionRepository,
   InMemoryEmployeeBindingRepository,
   InMemoryEmployeeEnrollmentRepository,
-  InMemoryInvitationRepository
+  InMemoryInvitationRepository,
+  InvitationRepository
 } from './repositories/invitation-binding-repository.js';
 import {
+  RefreshSessionRepository,
   InMemoryRefreshSessionRepository,
-  InMemoryRevokedJtiRepository
+  InMemoryRevokedJtiRepository,
+  RevokedJtiRepository
 } from './repositories/auth-repository.js';
 import {
+  AuditEventRepository,
   InMemoryAuditEventRepository,
-  InMemoryOffboardingJobRepository
+  InMemoryOffboardingJobRepository,
+  OffboardingJobRepository
 } from './repositories/offboarding-repository.js';
-import { InMemoryTenantRepository } from './repositories/tenant-repository.js';
+import { InMemoryTenantRepository, TenantRepository } from './repositories/tenant-repository.js';
+import {
+  createDynamoDbDocumentClient,
+  DynamoDbAccessControlRepository,
+  DynamoDbAuditEventRepository,
+  DynamoDbBatchInviteJobRepository,
+  DynamoDbBindingSessionRepository,
+  DynamoDbEmployeeBindingRepository,
+  DynamoDbEmployeeEnrollmentRepository,
+  DynamoDbInvitationRepository,
+  DynamoDbOffboardingJobRepository,
+  DynamoDbRefreshSessionRepository,
+  DynamoDbRevokedJtiRepository,
+  DynamoDbTenantRepository
+} from './repositories/dynamodb-repositories.js';
 import {
   AwsSecretsManagerLineCredentialStore,
   InMemoryLineCredentialStore
@@ -120,7 +143,55 @@ const retryOffboardingJobSchema = z.object({
   actorId: z.string().min(1)
 });
 
-const tenantRepository = new InMemoryTenantRepository();
+const useDynamoDbRepositories = process.env.USE_DYNAMODB_REPOSITORIES === 'true';
+const dynamoDbRegion = process.env.AWS_REGION ?? 'ap-northeast-1';
+const dynamoDbClient = useDynamoDbRepositories
+  ? createDynamoDbDocumentClient(dynamoDbRegion)
+  : undefined;
+
+const tenantRepository: TenantRepository = useDynamoDbRepositories
+  ? new DynamoDbTenantRepository(dynamoDbClient!, requireEnv('TENANTS_TABLE_NAME'))
+  : new InMemoryTenantRepository();
+
+const invitationRepository: InvitationRepository = useDynamoDbRepositories
+  ? new DynamoDbInvitationRepository(dynamoDbClient!, requireEnv('INVITATIONS_TABLE_NAME'))
+  : new InMemoryInvitationRepository();
+
+const batchInviteJobRepository: BatchInviteJobRepository = useDynamoDbRepositories
+  ? new DynamoDbBatchInviteJobRepository(dynamoDbClient!, requireEnv('INVITATIONS_TABLE_NAME'))
+  : new InMemoryBatchInviteJobRepository();
+
+const bindingSessionRepository: BindingSessionRepository = useDynamoDbRepositories
+  ? new DynamoDbBindingSessionRepository(dynamoDbClient!, requireEnv('INVITATIONS_TABLE_NAME'))
+  : new InMemoryBindingSessionRepository();
+
+const employeeEnrollmentRepository: EmployeeEnrollmentRepository = useDynamoDbRepositories
+  ? new DynamoDbEmployeeEnrollmentRepository(dynamoDbClient!, requireEnv('EMPLOYEES_TABLE_NAME'))
+  : new InMemoryEmployeeEnrollmentRepository();
+
+const employeeBindingRepository: EmployeeBindingRepository = useDynamoDbRepositories
+  ? new DynamoDbEmployeeBindingRepository(dynamoDbClient!, requireEnv('EMPLOYEES_TABLE_NAME'))
+  : new InMemoryEmployeeBindingRepository();
+
+const accessControlRepository: AccessControlRepository = useDynamoDbRepositories
+  ? new DynamoDbAccessControlRepository(dynamoDbClient!, requireEnv('EMPLOYEES_TABLE_NAME'))
+  : new InMemoryAccessControlRepository();
+
+const refreshSessionRepository: RefreshSessionRepository = useDynamoDbRepositories
+  ? new DynamoDbRefreshSessionRepository(dynamoDbClient!, requireEnv('SESSIONS_TABLE_NAME'))
+  : new InMemoryRefreshSessionRepository();
+
+const revokedJtiRepository: RevokedJtiRepository = useDynamoDbRepositories
+  ? new DynamoDbRevokedJtiRepository(dynamoDbClient!, requireEnv('TOKEN_REVOCATIONS_TABLE_NAME'))
+  : new InMemoryRevokedJtiRepository();
+
+const offboardingJobRepository: OffboardingJobRepository = useDynamoDbRepositories
+  ? new DynamoDbOffboardingJobRepository(dynamoDbClient!, requireEnv('AUDIT_EVENTS_TABLE_NAME'))
+  : new InMemoryOffboardingJobRepository();
+
+const auditEventRepository: AuditEventRepository = useDynamoDbRepositories
+  ? new DynamoDbAuditEventRepository(dynamoDbClient!, requireEnv('AUDIT_EVENTS_TABLE_NAME'))
+  : new InMemoryAuditEventRepository();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
   ? new AwsSecretsManagerLineCredentialStore({
@@ -155,17 +226,12 @@ const onboardingService = new TenantOnboardingService(
   }
 );
 
-const employeeBindingRepository = new InMemoryEmployeeBindingRepository();
-const accessControlRepository = new InMemoryAccessControlRepository();
-const offboardingJobRepository = new InMemoryOffboardingJobRepository();
-const auditEventRepository = new InMemoryAuditEventRepository();
-
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
-  new InMemoryInvitationRepository(),
-  new InMemoryBatchInviteJobRepository(),
-  new InMemoryBindingSessionRepository(),
-  new InMemoryEmployeeEnrollmentRepository(),
+  invitationRepository,
+  batchInviteJobRepository,
+  bindingSessionRepository,
+  employeeEnrollmentRepository,
   employeeBindingRepository,
   lineAuthClient,
   linePlatformClient,
@@ -186,8 +252,8 @@ const digitalIdService = new DigitalIdService(employeeBindingRepository, accessC
 });
 
 const authSessionService = new AuthSessionService(
-  new InMemoryRefreshSessionRepository(),
-  new InMemoryRevokedJtiRepository(),
+  refreshSessionRepository,
+  revokedJtiRepository,
   employeeBindingRepository,
   {
     issuer: 'one-team-api',
@@ -552,4 +618,14 @@ function isScannerAuthorized(event: APIGatewayProxyEvent): boolean {
 
   const expected = process.env.SCANNER_API_KEY ?? 'dev-scanner-key';
   return scannerKey === expected;
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+
+  if (!value?.trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value.trim();
 }

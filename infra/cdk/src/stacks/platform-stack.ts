@@ -71,9 +71,16 @@ export class PlatformStack extends Stack {
       memorySize: 512,
       environment: {
         USE_AWS_SECRETS_MANAGER: 'true',
+        USE_DYNAMODB_REPOSITORIES: 'true',
         LINE_INTEGRATION_MODE: 'real',
         LINE_SECRET_PREFIX: lineSecretPrefix,
-        PUBLIC_API_BASE_URL: publicApiBaseUrl
+        PUBLIC_API_BASE_URL: publicApiBaseUrl,
+        TENANTS_TABLE_NAME: `${prefix}-tenants`,
+        INVITATIONS_TABLE_NAME: `${prefix}-invitations`,
+        EMPLOYEES_TABLE_NAME: `${prefix}-employees`,
+        SESSIONS_TABLE_NAME: `${prefix}-sessions`,
+        TOKEN_REVOCATIONS_TABLE_NAME: `${prefix}-token-revocations`,
+        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`
       }
     });
 
@@ -170,6 +177,13 @@ export class PlatformStack extends Stack {
       ...tableProps,
       tableName: `${prefix}-audit-events`
     });
+
+    tenantsTable.grantReadWriteData(apiRuntimeHandler);
+    invitationsTable.grantReadWriteData(apiRuntimeHandler);
+    employeesTable.grantReadWriteData(apiRuntimeHandler);
+    sessionsTable.grantReadWriteData(apiRuntimeHandler);
+    tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
+    auditEventsTable.grantReadWriteData(apiRuntimeHandler);
 
     employeesTable.addGlobalSecondaryIndex({
       indexName: 'gsi-line-user',
@@ -276,6 +290,16 @@ export class PlatformStack extends Stack {
       exportName: `${prefix}-tenants-table-name`
     });
 
+    new CfnOutput(this, 'InvitationsTableName', {
+      value: invitationsTable.tableName,
+      exportName: `${prefix}-invitations-table-name`
+    });
+
+    new CfnOutput(this, 'EmployeesTableName', {
+      value: employeesTable.tableName,
+      exportName: `${prefix}-employees-table-name`
+    });
+
     new CfnOutput(this, 'SessionsTableName', {
       value: sessionsTable.tableName,
       exportName: `${prefix}-sessions-table-name`
@@ -284,6 +308,11 @@ export class PlatformStack extends Stack {
     new CfnOutput(this, 'TokenRevocationsTableName', {
       value: tokenRevocationsTable.tableName,
       exportName: `${prefix}-token-revocations-table-name`
+    });
+
+    new CfnOutput(this, 'AuditEventsTableName', {
+      value: auditEventsTable.tableName,
+      exportName: `${prefix}-audit-events-table-name`
     });
   }
 }

@@ -25,6 +25,7 @@ Current runtime/deployment state in this repository:
 - API logic exists in `apps/api` and is tested via Lambda event harness.
 - CDK deploys platform resources plus API Gateway routes for `/health` and `/v1/*`.
 - LINE integration now supports both `stub` and `real` modes (runtime switch via env).
+- Runtime repositories support DynamoDB-backed persistence (`USE_DYNAMODB_REPOSITORIES=true`) for deploy environments.
 
 You can deploy and operate a baseline environment now, and then harden to full LINE production mode by following the "Production LINE Integration" section.
 
@@ -116,10 +117,17 @@ pnpm --filter @one-team/api test
 |---|---|---|---|
 | `AWS_REGION` | no | `ap-northeast-1` | AWS region for secret store client |
 | `USE_AWS_SECRETS_MANAGER` | no | `false` | Use AWS Secrets Manager for LINE credentials |
+| `USE_DYNAMODB_REPOSITORIES` | no | `false` | Use DynamoDB-backed repositories instead of in-memory stores |
 | `LINE_INTEGRATION_MODE` | no | `stub` | `stub` for local/CI, `real` for live LINE APIs |
 | `LINE_API_BASE_URL` | no | `https://api.line.me` | LINE API base URL override |
 | `LINE_WEBHOOK_VERIFY_TOKEN_PREFIX` | no | `line-verify-` | Backward-compatible webhook verify token prefix |
 | `LINE_SECRET_PREFIX` | no | `one-team/dev/tenants` | Secret namespace prefix |
+| `TENANTS_TABLE_NAME` | no | `one-team-dev-tenants` | DynamoDB table for tenant setup state |
+| `INVITATIONS_TABLE_NAME` | no | `one-team-dev-invitations` | DynamoDB table for invitations, batch jobs, binding sessions |
+| `EMPLOYEES_TABLE_NAME` | no | `one-team-dev-employees` | DynamoDB table for enrollments, bindings, blacklist state |
+| `SESSIONS_TABLE_NAME` | no | `one-team-dev-sessions` | DynamoDB table for refresh sessions |
+| `TOKEN_REVOCATIONS_TABLE_NAME` | no | `one-team-dev-token-revocations` | DynamoDB table for revoked access token JTIs |
+| `AUDIT_EVENTS_TABLE_NAME` | no | `one-team-dev-audit-events` | DynamoDB table for audit events and offboarding jobs |
 | `PUBLIC_API_BASE_URL` | no | `https://api.example.com` | Used for webhook URL generation |
 | `INVITE_BASE_URL` | no | `https://app.example.com/invite` | Invitation link base URL |
 | `DIGITAL_ID_SIGNING_SECRET` | no | `digital-id-dev-secret` | Dynamic ID signature key |
@@ -152,6 +160,7 @@ Enable real LINE APIs by setting:
 ```bash
 LINE_INTEGRATION_MODE=real
 USE_AWS_SECRETS_MANAGER=true
+USE_DYNAMODB_REPOSITORIES=true
 ```
 
 Real mode behavior:

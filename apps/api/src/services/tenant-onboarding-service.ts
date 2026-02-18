@@ -5,12 +5,10 @@ import {
   createTenantRecord,
   toTenantSetupSnapshot
 } from '../domain/tenant.js';
+import { NotFoundError, ValidationError } from '../errors.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';
 import { TenantRepository } from '../repositories/tenant-repository.js';
 import { LineCredentialStore } from '../security/line-credential-store.js';
-
-export class NotFoundError extends Error {}
-export class ValidationError extends Error {}
 
 export interface CreateTenantInput {
   tenantName: string;

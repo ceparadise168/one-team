@@ -18,10 +18,10 @@
 
 ## 4. Invitation and binding lifecycle
 
-- [ ] 4.1 Implement invitation token issuance with tenant scoping, TTL, and usage-limit enforcement
-- [ ] 4.2 Implement batch invitation email ingestion and async dispatch with per-recipient status tracking
-- [ ] 4.3 Implement binding flow (`bind/start`, `bind/complete`) requiring LINE auth + employee ID + one-time binding code
-- [ ] 4.4 Enforce uniqueness and anti-abuse controls for LINE-user and employee-identity bindings
+- [x] 4.1 Implement invitation token issuance with tenant scoping, TTL, and usage-limit enforcement
+- [x] 4.2 Implement batch invitation email ingestion and async dispatch with per-recipient status tracking
+- [x] 4.3 Implement binding flow (`bind/start`, `bind/complete`) requiring LINE auth + employee ID + one-time binding code
+- [x] 4.4 Enforce uniqueness and anti-abuse controls for LINE-user and employee-identity bindings
 
 ## 5. Authentication and session security
 

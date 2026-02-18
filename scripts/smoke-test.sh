@@ -204,8 +204,17 @@ DIGITAL_PAYLOAD="$(
 VERIFY_BEFORE="$(
   api_post_scanner "$DIGITAL_PAYLOAD"
 )"
-VALID_BEFORE="$(echo "$VERIFY_BEFORE" | jq -er '.valid')"
+VALID_BEFORE="$(echo "$VERIFY_BEFORE" | jq -r 'if .valid == null then "INVALID" else (.valid | tostring) end')"
+if [[ "$VALID_BEFORE" != "true" && "$VALID_BEFORE" != "false" ]]; then
+  echo "Unexpected scanner verify response before offboard." >&2
+  echo "$VERIFY_BEFORE" | jq . >&2 || echo "$VERIFY_BEFORE" >&2
+  exit 1
+fi
 echo "  scanner valid before offboard: $VALID_BEFORE"
+if [[ "$VALID_BEFORE" != "true" ]]; then
+  echo "Offboard pre-check failed: scanner payload should be valid before offboarding." >&2
+  exit 1
+fi
 
 if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
   echo "[8/8] Offboarding and re-verifying scanner..."
@@ -216,7 +225,12 @@ if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
   REASON_AFTER="UNKNOWN"
   for ((attempt = 1; attempt <= OFFBOARD_VERIFY_RETRIES; attempt += 1)); do
     VERIFY_AFTER="$(api_post_scanner "$DIGITAL_PAYLOAD")"
-    VALID_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.valid')"
+    VALID_AFTER="$(echo "$VERIFY_AFTER" | jq -r 'if .valid == null then "INVALID" else (.valid | tostring) end')"
+    if [[ "$VALID_AFTER" != "true" && "$VALID_AFTER" != "false" ]]; then
+      echo "Unexpected scanner verify response after offboard." >&2
+      echo "$VERIFY_AFTER" | jq . >&2 || echo "$VERIFY_AFTER" >&2
+      exit 1
+    fi
     REASON_AFTER="$(echo "$VERIFY_AFTER" | jq -r '.reasonCode // "UNKNOWN"')"
 
     if [[ "$VALID_AFTER" == "false" ]]; then

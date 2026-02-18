@@ -274,7 +274,7 @@ Manual step-by-step option:
 Set your API URL and any admin bearer token:
 
 ```bash
-export API_URL="https://<your-api-id>.execute-api.ap-northeast-1.amazonaws.com/dev"
+export API_URL="https://your-api-id.execute-api.ap-northeast-1.amazonaws.com/dev"
 export ADMIN_TOKEN="admin-token"
 ```
 

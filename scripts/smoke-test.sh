@@ -3,11 +3,38 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+load_env_file() {
+  local env_file="$1"
+  local line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" != *"="* ]] && continue
+
+    local key="${line%%=*}"
+    local value="${line#*=}"
+
+    key="$(echo "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    value="$(echo "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+    if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      continue
+    fi
+
+    if [[ "$value" =~ ^\".*\"$ ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" =~ ^\'.*\'$ ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+
+    export "$key=$value"
+  done < "$env_file"
+}
+
 if [[ -f "$ROOT_DIR/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$ROOT_DIR/.env"
-  set +a
+  load_env_file "$ROOT_DIR/.env"
 fi
 
 require_cmd() {
@@ -31,6 +58,11 @@ require_cmd jq
 require_env API_URL
 
 API_URL="${API_URL%/}"
+if [[ "$API_URL" == *"<"* || "$API_URL" == *">"* ]]; then
+  echo "API_URL still contains placeholder markers. Replace it with a real execute-api URL." >&2
+  exit 1
+fi
+
 ADMIN_TOKEN="${ADMIN_TOKEN:-admin-token}"
 SCANNER_API_KEY="${SCANNER_API_KEY:-dev-scanner-key}"
 CHANNEL_ID="${CHANNEL_ID:-${MESSAGING_CHANNEL_ID:-1234567890}}"

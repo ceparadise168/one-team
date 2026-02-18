@@ -32,6 +32,8 @@ export interface EmployeeEnrollmentRepository {
 }
 
 export interface EmployeeBindingRepository {
+  findByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null>;
+  findByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null>;
   findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null>;
   findActiveByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null>;
   upsert(record: EmployeeBindingRecord): Promise<void>;
@@ -128,6 +130,14 @@ export class InMemoryEmployeeBindingRepository implements EmployeeBindingReposit
 
   private employeeKey(tenantId: string, employeeId: string): string {
     return `${tenantId}::${employeeId}`;
+  }
+
+  async findByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {
+    return this.byLineUser.get(this.lineKey(tenantId, lineUserId)) ?? null;
+  }
+
+  async findByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null> {
+    return this.byEmployee.get(this.employeeKey(tenantId, employeeId)) ?? null;
   }
 
   async findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {

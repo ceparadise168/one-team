@@ -102,3 +102,42 @@ test('expired payload is rejected', async () => {
   assert.equal(verification.valid, false);
   assert.equal(verification.reasonCode, 'EXPIRED');
 });
+
+test('digital payload rotates every 30-second window', async () => {
+  const bindingRepository = new InMemoryEmployeeBindingRepository();
+  await bindingRepository.upsert({
+    tenantId: 'tenant_a',
+    employeeId: 'E001',
+    lineUserId: 'U001',
+    boundAt: new Date('2026-02-18T00:00:05.000Z').toISOString(),
+    employmentStatus: 'ACTIVE'
+  });
+
+  const firstService = new DigitalIdService(bindingRepository, new InMemoryAccessControlRepository(), {
+    signingSecret: 'digital-id-test-secret',
+    windowSeconds: 30,
+    toleranceWindows: 1,
+    now: () => new Date('2026-02-18T00:00:10.000Z')
+  });
+
+  const secondService = new DigitalIdService(bindingRepository, new InMemoryAccessControlRepository(), {
+    signingSecret: 'digital-id-test-secret',
+    windowSeconds: 30,
+    toleranceWindows: 1,
+    now: () => new Date('2026-02-18T00:00:40.000Z')
+  });
+
+  const firstPayload = await firstService.generateDynamicPayload({
+    tenantId: 'tenant_a',
+    employeeId: 'E001',
+    lineUserId: 'U001'
+  });
+
+  const secondPayload = await secondService.generateDynamicPayload({
+    tenantId: 'tenant_a',
+    employeeId: 'E001',
+    lineUserId: 'U001'
+  });
+
+  assert.notEqual(firstPayload.payload, secondPayload.payload);
+});

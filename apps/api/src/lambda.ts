@@ -22,6 +22,10 @@ import {
   InMemoryRefreshSessionRepository,
   InMemoryRevokedJtiRepository
 } from './repositories/auth-repository.js';
+import {
+  InMemoryAuditEventRepository,
+  InMemoryOffboardingJobRepository
+} from './repositories/offboarding-repository.js';
 import { InMemoryTenantRepository } from './repositories/tenant-repository.js';
 import {
   AwsSecretsManagerLineCredentialStore,
@@ -30,6 +34,7 @@ import {
 import { AuthSessionService } from './services/auth-session-service.js';
 import { DigitalIdService } from './services/digital-id-service.js';
 import { InvitationBindingService } from './services/invitation-binding-service.js';
+import { OffboardingService } from './services/offboarding-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 
 const createTenantSchema = z.object({
@@ -83,6 +88,14 @@ const scannerVerifySchema = z.object({
   payload: z.string().min(1)
 });
 
+const offboardEmployeeSchema = z.object({
+  actorId: z.string().min(1)
+});
+
+const retryOffboardingJobSchema = z.object({
+  actorId: z.string().min(1)
+});
+
 const tenantRepository = new InMemoryTenantRepository();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
@@ -104,6 +117,8 @@ const onboardingService = new TenantOnboardingService(
 
 const employeeBindingRepository = new InMemoryEmployeeBindingRepository();
 const accessControlRepository = new InMemoryAccessControlRepository();
+const offboardingJobRepository = new InMemoryOffboardingJobRepository();
+const auditEventRepository = new InMemoryAuditEventRepository();
 
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
@@ -139,6 +154,20 @@ const authSessionService = new AuthSessionService(
     refreshSessionTtlSeconds: 7 * 24 * 60 * 60,
     accessTokenSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-secret-change-me',
     now: () => new Date()
+  }
+);
+
+const offboardingService = new OffboardingService(
+  employeeBindingRepository,
+  accessControlRepository,
+  offboardingJobRepository,
+  auditEventRepository,
+  authSessionService,
+  new StubLinePlatformClient(),
+  {
+    now: () => new Date(),
+    maxAttempts: 5,
+    backoffBaseSeconds: 30
   }
 );
 
@@ -259,6 +288,35 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         sessionId: principal.sessionId,
         tokenExpiresAtEpochSeconds: principal.exp
       });
+    }
+
+    const offboardMatch = path.match(
+      /^\/v1\/admin\/tenants\/([^/]+)\/employees\/([^/]+)\/offboard$/
+    );
+    if (method === 'POST' && offboardMatch) {
+      const payload = offboardEmployeeSchema.parse(parseBody(event));
+      const result = await offboardingService.offboardEmployee({
+        tenantId: offboardMatch[1],
+        employeeId: offboardMatch[2],
+        actorId: payload.actorId
+      });
+      return jsonResponse(200, result);
+    }
+
+    const retryOffboardingMatch = path.match(/^\/v1\/admin\/offboarding\/jobs\/([^/]+)\/retry$/);
+    if (method === 'POST' && retryOffboardingMatch) {
+      const payload = retryOffboardingJobSchema.parse(parseBody(event));
+      const job = await offboardingService.processOffboardingJob({
+        jobId: retryOffboardingMatch[1],
+        actorId: payload.actorId
+      });
+      return jsonResponse(200, job);
+    }
+
+    const auditMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/audit-events$/);
+    if (method === 'GET' && auditMatch) {
+      const events = await offboardingService.listAuditEvents(auditMatch[1]);
+      return jsonResponse(200, { events });
     }
 
     const digitalIdMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/digital-id$/);

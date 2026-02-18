@@ -38,14 +38,14 @@
 
 ## 7. Offboarding kill switch and audit trail
 
-- [ ] 7.1 Implement HR offboarding command and employee status transition to OFFBOARDED
-- [ ] 7.2 Implement async Rich Menu unlink workflow with retry/backoff and failure alerting
-- [ ] 7.3 Implement immediate global session and token revocation on offboarding
-- [ ] 7.4 Implement append-only audit events for offboarding actions and execution outcomes
+- [x] 7.1 Implement HR offboarding command and employee status transition to OFFBOARDED
+- [x] 7.2 Implement async Rich Menu unlink workflow with retry/backoff and failure alerting
+- [x] 7.3 Implement immediate global session and token revocation on offboarding
+- [x] 7.4 Implement append-only audit events for offboarding actions and execution outcomes
 
 ## 8. Validation, testing, and release readiness
 
-- [ ] 8.1 Add unit tests for invitation lifecycle, binding-code lockout, token/session revocation, and digital ID rotation
+- [x] 8.1 Add unit tests for invitation lifecycle, binding-code lockout, token/session revocation, and digital ID rotation
 - [ ] 8.2 Add integration tests for LINE webhook verification, bind flow, scanner verify API, and offboarding pipeline
 - [ ] 8.3 Add end-to-end tests covering setup wizard, employee binding journey, digital ID verification, and kill switch effect
 - [ ] 8.4 Define pilot release checklist with feature flags, rollback steps, and acceptance KPI verification

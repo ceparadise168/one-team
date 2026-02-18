@@ -60,6 +60,8 @@ export class PlatformStack extends Stack {
       }
     });
 
+    const publicApiBaseUrl = `https://${api.restApiId}.execute-api.${this.region}.${this.urlSuffix}/${props.stage}`;
+
     const apiRuntimeHandler = new lambdaNodejs.NodejsFunction(this, 'ApiRuntimeHandler', {
       functionName: `${prefix}-api-runtime`,
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -70,7 +72,7 @@ export class PlatformStack extends Stack {
       environment: {
         USE_AWS_SECRETS_MANAGER: 'true',
         LINE_SECRET_PREFIX: lineSecretPrefix,
-        PUBLIC_API_BASE_URL: api.url
+        PUBLIC_API_BASE_URL: publicApiBaseUrl
       }
     });
 

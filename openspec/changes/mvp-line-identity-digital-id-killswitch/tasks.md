@@ -31,10 +31,10 @@
 
 ## 6. Digital employee ID and scanner verification
 
-- [ ] 6.1 Implement dynamic digital ID payload generation with 30-second rotation and signed metadata
-- [ ] 6.2 Build LIFF digital ID view to render rotating QR and handle refresh lifecycle
-- [ ] 6.3 Implement scanner verification API with signature, expiry window, and employment/blacklist checks
-- [ ] 6.4 Standardize verification result reason codes for scanner integration handling
+- [x] 6.1 Implement dynamic digital ID payload generation with 30-second rotation and signed metadata
+- [x] 6.2 Build LIFF digital ID view to render rotating QR and handle refresh lifecycle
+- [x] 6.3 Implement scanner verification API with signature, expiry window, and employment/blacklist checks
+- [x] 6.4 Standardize verification result reason codes for scanner integration handling
 
 ## 7. Offboarding kill switch and audit trail
 

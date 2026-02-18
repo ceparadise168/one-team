@@ -10,6 +10,7 @@ import { requireEmployeePrincipal } from './http/auth-middleware.js';
 import { jsonResponse } from './http/response.js';
 import { StubLineAuthClient } from './line/line-auth-client.js';
 import { StubLinePlatformClient } from './line/line-platform-client.js';
+import { InMemoryAccessControlRepository } from './repositories/access-control-repository.js';
 import {
   InMemoryBatchInviteJobRepository,
   InMemoryBindingSessionRepository,
@@ -27,6 +28,7 @@ import {
   InMemoryLineCredentialStore
 } from './security/line-credential-store.js';
 import { AuthSessionService } from './services/auth-session-service.js';
+import { DigitalIdService } from './services/digital-id-service.js';
 import { InvitationBindingService } from './services/invitation-binding-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 
@@ -77,6 +79,10 @@ const refreshSessionSchema = z.object({
   refreshToken: z.string().min(1)
 });
 
+const scannerVerifySchema = z.object({
+  payload: z.string().min(1)
+});
+
 const tenantRepository = new InMemoryTenantRepository();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
@@ -97,6 +103,7 @@ const onboardingService = new TenantOnboardingService(
 );
 
 const employeeBindingRepository = new InMemoryEmployeeBindingRepository();
+const accessControlRepository = new InMemoryAccessControlRepository();
 
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
@@ -114,6 +121,13 @@ const invitationBindingService = new InvitationBindingService(
     now: () => new Date()
   }
 );
+
+const digitalIdService = new DigitalIdService(employeeBindingRepository, accessControlRepository, {
+  signingSecret: process.env.DIGITAL_ID_SIGNING_SECRET ?? 'digital-id-dev-secret',
+  windowSeconds: 30,
+  toleranceWindows: 1,
+  now: () => new Date()
+});
 
 const authSessionService = new AuthSessionService(
   new InMemoryRefreshSessionRepository(),
@@ -247,6 +261,33 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       });
     }
 
+    const digitalIdMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/digital-id$/);
+    if (method === 'GET' && digitalIdMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: digitalIdMatch[1]
+      });
+
+      const generated = await digitalIdService.generateDynamicPayload({
+        tenantId: principal.tenantId,
+        employeeId: principal.employeeId,
+        lineUserId: principal.lineUserId
+      });
+
+      return jsonResponse(200, generated);
+    }
+
+    if (method === 'POST' && path === '/v1/scanner/verify') {
+      if (!isScannerAuthorized(event)) {
+        return jsonResponse(401, { error: 'Invalid scanner API key' });
+      }
+
+      const payload = scannerVerifySchema.parse(parseBody(event));
+      const result = await digitalIdService.verifyDynamicPayload(payload.payload);
+      return jsonResponse(200, result);
+    }
+
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -300,4 +341,19 @@ function isAdminAuthorized(event: APIGatewayProxyEvent): boolean {
   }
 
   return authorization.startsWith('Bearer ') && authorization.trim().length > 'Bearer '.length;
+}
+
+function isScannerAuthorized(event: APIGatewayProxyEvent): boolean {
+  const scannerKey =
+    event.headers['x-scanner-api-key'] ??
+    event.headers['X-Scanner-Api-Key'] ??
+    event.headers['x-api-key'] ??
+    event.headers['X-Api-Key'];
+
+  if (!scannerKey) {
+    return false;
+  }
+
+  const expected = process.env.SCANNER_API_KEY ?? 'dev-scanner-key';
+  return scannerKey === expected;
 }

@@ -269,6 +269,11 @@ If Messaging API and LINE Login use separate channels, set both pairs in `.env`:
 - `CHANNEL_ID` / `CHANNEL_SECRET` (Messaging API)
 - `LOGIN_CHANNEL_ID` / `LOGIN_CHANNEL_SECRET` (LINE Login)
 
+For real LINE mode, defaults like `1234567890` and `line-id:U1001` will fail. Set real values for:
+- `CHANNEL_ID`, `CHANNEL_SECRET`
+- `LOGIN_CHANNEL_ID`, `LOGIN_CHANNEL_SECRET`
+- `LINE_ID_TOKEN` (issued by LINE Login channel)
+
 Manual step-by-step option:
 
 Set your API URL and any admin bearer token:

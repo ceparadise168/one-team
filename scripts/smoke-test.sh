@@ -81,18 +81,67 @@ RUN_OFFBOARD_CHECK="${RUN_OFFBOARD_CHECK:-true}"
 api_post_admin() {
   local path="$1"
   local body="$2"
-  curl -sS -X POST "$API_URL$path" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$body"
+  api_json_request "POST" "$path" "$body" "Authorization: Bearer $ADMIN_TOKEN"
 }
 
 api_post_public() {
   local path="$1"
   local body="$2"
-  curl -sS -X POST "$API_URL$path" \
-    -H "Content-Type: application/json" \
-    -d "$body"
+  api_json_request "POST" "$path" "$body"
+}
+
+api_get_authorized() {
+  local path="$1"
+  local authorization_header="$2"
+  api_json_request "GET" "$path" "" "Authorization: $authorization_header"
+}
+
+api_post_scanner() {
+  local payload="$1"
+  api_json_request "POST" "/v1/scanner/verify" "{\"payload\":\"$payload\"}" "x-scanner-api-key: $SCANNER_API_KEY"
+}
+
+api_json_request() {
+  local method="$1"
+  local path="$2"
+  local body="$3"
+  local extra_header="${4:-}"
+  local tmp_body
+  local http_code
+
+  tmp_body="$(mktemp)"
+  local curl_args=(
+    -sS
+    -o "$tmp_body"
+    -w "%{http_code}"
+    -X "$method"
+    "$API_URL$path"
+    -H "Content-Type: application/json"
+  )
+
+  if [[ -n "$extra_header" ]]; then
+    curl_args+=(-H "$extra_header")
+  fi
+
+  if [[ "$method" == "POST" || "$method" == "PUT" || "$method" == "PATCH" ]]; then
+    curl_args+=(-d "$body")
+  fi
+
+  http_code="$(curl "${curl_args[@]}")"
+
+  if [[ ! "$http_code" =~ ^2 ]]; then
+    echo "Request failed: $method $path (HTTP $http_code)" >&2
+    if jq -e . "$tmp_body" >/dev/null 2>&1; then
+      jq . "$tmp_body" >&2
+    else
+      cat "$tmp_body" >&2
+    fi
+    rm -f "$tmp_body"
+    exit 1
+  fi
+
+  cat "$tmp_body"
+  rm -f "$tmp_body"
 }
 
 echo "[1/8] Creating tenant..."
@@ -143,15 +192,11 @@ ACCESS_TOKEN="$(echo "$BIND_COMPLETE" | jq -er '.auth.accessToken')"
 
 echo "[7/8] Fetching digital ID and scanner verify..."
 DIGITAL_PAYLOAD="$(
-  curl -sS "$API_URL/v1/liff/tenants/$TENANT_ID/me/digital-id" \
-    -H "Authorization: Bearer $ACCESS_TOKEN" |
+  api_get_authorized "/v1/liff/tenants/$TENANT_ID/me/digital-id" "Bearer $ACCESS_TOKEN" |
     jq -er '.payload'
 )"
 VERIFY_BEFORE="$(
-  curl -sS -X POST "$API_URL/v1/scanner/verify" \
-    -H "x-scanner-api-key: $SCANNER_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{\"payload\":\"$DIGITAL_PAYLOAD\"}"
+  api_post_scanner "$DIGITAL_PAYLOAD"
 )"
 VALID_BEFORE="$(echo "$VERIFY_BEFORE" | jq -er '.valid')"
 echo "  scanner valid before offboard: $VALID_BEFORE"
@@ -162,10 +207,7 @@ if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
     '{"actorId":"hr-admin"}' >/dev/null
 
   VERIFY_AFTER="$(
-    curl -sS -X POST "$API_URL/v1/scanner/verify" \
-      -H "x-scanner-api-key: $SCANNER_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d "{\"payload\":\"$DIGITAL_PAYLOAD\"}"
+    api_post_scanner "$DIGITAL_PAYLOAD"
   )"
   VALID_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.valid')"
   REASON_AFTER="$(echo "$VERIFY_AFTER" | jq -er '.reasonCode')"

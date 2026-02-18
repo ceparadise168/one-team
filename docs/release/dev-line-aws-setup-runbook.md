@@ -183,6 +183,9 @@ Important:
 export ADMIN_TOKEN="admin-token"
 export CHANNEL_ID="<line-channel-id>"
 export CHANNEL_SECRET="<line-channel-secret>"
+# Optional when LINE Login channel is different from Messaging API channel:
+# export LOGIN_CHANNEL_ID="<line-login-channel-id>"
+# export LOGIN_CHANNEL_SECRET="<line-login-channel-secret>"
 
 TENANT_ID=$(curl -sS -X POST "$API_URL/v1/admin/tenants" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -192,7 +195,12 @@ TENANT_ID=$(curl -sS -X POST "$API_URL/v1/admin/tenants" \
 curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/line/connect" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"channelId\":\"$CHANNEL_ID\",\"channelSecret\":\"$CHANNEL_SECRET\"}" | jq
+  -d "{
+    \"channelId\":\"$CHANNEL_ID\",
+    \"channelSecret\":\"$CHANNEL_SECRET\",
+    \"loginChannelId\":\"${LOGIN_CHANNEL_ID:-$CHANNEL_ID}\",
+    \"loginChannelSecret\":\"${LOGIN_CHANNEL_SECRET:-$CHANNEL_SECRET}\"
+  }" | jq
 
 curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/line/provision" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \

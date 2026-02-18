@@ -62,6 +62,71 @@ test('integration: setup wizard APIs complete connection/provision/webhook flow'
   assert.ok(verifiedBody.setup.completedAt);
 });
 
+test('integration: connect line stores optional login channel credentials', async () => {
+  const suffix = `${Date.now()}-connect-login`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  const connected = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/line/connect`,
+    headers: adminHeaders,
+    body: {
+      channelId: '1234567890',
+      channelSecret: '1234567890abcdef',
+      loginChannelId: '9876543210',
+      loginChannelSecret: 'abcdef1234567890'
+    }
+  });
+
+  assert.equal(connected.statusCode, 200);
+  assert.equal(
+    (connected.body as { line: { loginChannelId?: string } }).line.loginChannelId,
+    '9876543210'
+  );
+});
+
+test('integration: connect line rejects partial login credential payload', async () => {
+  const suffix = `${Date.now()}-connect-login-invalid`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  const connected = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/line/connect`,
+    headers: adminHeaders,
+    body: {
+      channelId: '1234567890',
+      channelSecret: '1234567890abcdef',
+      loginChannelId: '9876543210'
+    }
+  });
+
+  assert.equal(connected.statusCode, 400);
+});
+
 test('integration: bind + digital id + offboard pipeline', async () => {
   const suffix = `${Date.now()}-pipeline`;
 

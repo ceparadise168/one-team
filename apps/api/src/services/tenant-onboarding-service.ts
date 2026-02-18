@@ -19,6 +19,8 @@ export interface ConnectLineInput {
   tenantId: string;
   channelId: string;
   channelSecret: string;
+  loginChannelId?: string;
+  loginChannelSecret?: string;
 }
 
 export interface VerifyWebhookInput {
@@ -64,6 +66,17 @@ export class TenantOnboardingService {
   async connectLineCredentials(input: ConnectLineInput): Promise<TenantSetupSnapshot> {
     const record = await this.getTenant(input.tenantId);
     const nowIso = this.options.now().toISOString();
+    const hasLoginChannelId = Boolean(input.loginChannelId?.trim());
+    const hasLoginChannelSecret = Boolean(input.loginChannelSecret?.trim());
+
+    if (hasLoginChannelId !== hasLoginChannelSecret) {
+      throw new ValidationError('loginChannelId and loginChannelSecret must be provided together');
+    }
+
+    const loginChannelId = hasLoginChannelId ? input.loginChannelId?.trim() : input.channelId;
+    const loginChannelSecret = hasLoginChannelSecret
+      ? input.loginChannelSecret?.trim()
+      : input.channelSecret;
 
     record.setup.connection = {
       status: 'IN_PROGRESS',
@@ -77,10 +90,13 @@ export class TenantOnboardingService {
 
       const result = await this.lineCredentialStore.upsertTenantCredentials(input.tenantId, {
         channelId: input.channelId,
-        channelSecret: input.channelSecret
+        channelSecret: input.channelSecret,
+        loginChannelId,
+        loginChannelSecret
       });
 
       record.line.channelId = input.channelId;
+      record.line.loginChannelId = loginChannelId;
       record.line.secretArn = result.secretArn;
       record.line.resources.webhookUrl = this.buildWebhookUrl(record.tenantId);
       record.setup.connection = {

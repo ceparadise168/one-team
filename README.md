@@ -276,10 +276,19 @@ TENANT_ID=$(curl -sS -X POST "$API_URL/v1/admin/tenants" \
 Connect + provision + verify webhook:
 
 ```bash
+# If LINE Login uses a different channel than Messaging API, set these too:
+# export LOGIN_CHANNEL_ID="YOUR_LOGIN_CHANNEL_ID"
+# export LOGIN_CHANNEL_SECRET="your-login-channel-secret"
+
 curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/line/connect" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"channelId":"1234567890","channelSecret":"1234567890abcdef"}' > /dev/null
+  -d "{
+    \"channelId\":\"1234567890\",
+    \"channelSecret\":\"1234567890abcdef\",
+    \"loginChannelId\":\"${LOGIN_CHANNEL_ID:-1234567890}\",
+    \"loginChannelSecret\":\"${LOGIN_CHANNEL_SECRET:-1234567890abcdef}\"
+  }" > /dev/null
 
 curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/line/provision" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -314,9 +323,16 @@ curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/invites/batch-jobs/$JOB_I
 Bind employee + get digital ID + scanner verify:
 
 ```bash
+# Stub mode sample:
 BIND_SESSION_TOKEN=$(curl -sS -X POST "$API_URL/v1/public/bind/start" \
   -H "Content-Type: application/json" \
   -d "{\"lineIdToken\":\"line-id:U1001\",\"invitationToken\":\"$INVITATION_TOKEN\"}" | jq -r '.bindSessionToken')
+
+# Real mode: pass LINE Login id_token instead of line-id:* synthetic token.
+# LINE_ID_TOKEN="<id_token from LINE Login channel>"
+# BIND_SESSION_TOKEN=$(curl -sS -X POST "$API_URL/v1/public/bind/start" \
+#   -H "Content-Type: application/json" \
+#   -d "{\"lineIdToken\":\"$LINE_ID_TOKEN\",\"invitationToken\":\"$INVITATION_TOKEN\"}" | jq -r '.bindSessionToken')
 
 BIND_COMPLETE=$(curl -sS -X POST "$API_URL/v1/public/bind/complete" \
   -H "Content-Type: application/json" \

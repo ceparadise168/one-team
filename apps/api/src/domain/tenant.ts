@@ -21,6 +21,7 @@ export interface TenantRecord {
   updatedAt: string;
   line: {
     channelId?: string;
+    loginChannelId?: string;
     secretArn?: string;
     resources: LineResources;
   };
@@ -38,6 +39,7 @@ export interface TenantSetupSnapshot {
   adminEmail: string;
   line: {
     channelId?: string;
+    loginChannelId?: string;
     secretArn?: string;
     resources: LineResources;
   };

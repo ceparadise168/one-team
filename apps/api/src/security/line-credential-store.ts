@@ -10,6 +10,8 @@ import {
 export interface LineCredentials {
   channelId: string;
   channelSecret: string;
+  loginChannelId?: string;
+  loginChannelSecret?: string;
 }
 
 export interface LineCredentialStore {
@@ -56,10 +58,7 @@ export class AwsSecretsManagerLineCredentialStore implements LineCredentialStore
     credentials: LineCredentials
   ): Promise<{ secretArn: string }> {
     const secretId = `${this.secretPrefix}/${tenantId}/line-credentials`;
-    const secretString = JSON.stringify({
-      channelId: credentials.channelId,
-      channelSecret: credentials.channelSecret
-    });
+    const secretString = serializeLineCredentials(credentials);
 
     try {
       const created = await this.client.send(
@@ -119,8 +118,39 @@ function parseLineCredentials(raw: string): LineCredentials {
     throw new Error('LINE credentials secret is malformed');
   }
 
+  const hasLoginChannelId = parsed.loginChannelId !== undefined;
+  const hasLoginChannelSecret = parsed.loginChannelSecret !== undefined;
+
+  if (hasLoginChannelId !== hasLoginChannelSecret) {
+    throw new Error('LINE login credentials secret is malformed');
+  }
+
+  if (hasLoginChannelId && typeof parsed.loginChannelId !== 'string') {
+    throw new Error('LINE login credentials secret is malformed');
+  }
+
+  if (hasLoginChannelSecret && typeof parsed.loginChannelSecret !== 'string') {
+    throw new Error('LINE login credentials secret is malformed');
+  }
+
   return {
     channelId: parsed.channelId,
-    channelSecret: parsed.channelSecret
+    channelSecret: parsed.channelSecret,
+    loginChannelId: parsed.loginChannelId,
+    loginChannelSecret: parsed.loginChannelSecret
   };
+}
+
+function serializeLineCredentials(credentials: LineCredentials): string {
+  const payload: LineCredentials = {
+    channelId: credentials.channelId,
+    channelSecret: credentials.channelSecret
+  };
+
+  if (credentials.loginChannelId && credentials.loginChannelSecret) {
+    payload.loginChannelId = credentials.loginChannelId;
+    payload.loginChannelSecret = credentials.loginChannelSecret;
+  }
+
+  return JSON.stringify(payload);
 }

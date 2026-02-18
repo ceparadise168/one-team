@@ -73,3 +73,45 @@ test('real line auth client rejects when tenant line credentials are missing', a
     }
   );
 });
+
+test('real line auth client uses login channel credentials when provided', async () => {
+  const credentialStore = new InMemoryLineCredentialStore();
+  await credentialStore.upsertTenantCredentials('tenant_b', {
+    channelId: '2000000000',
+    channelSecret: 'line-channel-secret-1234',
+    loginChannelId: '2009999999',
+    loginChannelSecret: 'line-login-secret-5678'
+  });
+
+  const calls: Array<{ url: string; body?: string }> = [];
+  const fetchFn: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const body = typeof init?.body === 'string' ? init.body : undefined;
+    calls.push({ url, body });
+
+    if (url.endsWith('/oauth2/v2.1/verify')) {
+      return new Response(JSON.stringify({ sub: 'Ulogin123' }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json'
+        }
+      });
+    }
+
+    throw new Error(`Unexpected LINE API call in test: ${url}`);
+  };
+
+  const client = new RealLineAuthClient(credentialStore, {
+    apiBaseUrl: 'https://api.line.test',
+    fetchFn
+  });
+
+  const validated = await client.validateIdToken({
+    tenantId: 'tenant_b',
+    idToken: 'real-line-id-token'
+  });
+
+  assert.equal(validated.lineUserId, 'Ulogin123');
+  assert.ok(calls.some((call) => call.body?.includes('client_id=2009999999')));
+  assert.ok(!calls.some((call) => call.body?.includes('client_id=2000000000')));
+});

@@ -52,9 +52,11 @@ export class RealLineAuthClient implements LineAuthClient {
       throw new ValidationError('LINE credentials are not connected for tenant');
     }
 
+    const loginChannelId = credentials.loginChannelId ?? credentials.channelId;
+
     const formBody = new URLSearchParams({
       id_token: input.idToken,
-      client_id: credentials.channelId
+      client_id: loginChannelId
     });
 
     const response = await this.fetchFn(`${this.apiBaseUrl}/oauth2/v2.1/verify`, {

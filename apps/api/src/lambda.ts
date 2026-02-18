@@ -43,10 +43,25 @@ const createTenantSchema = z.object({
   adminEmail: z.string().email()
 });
 
-const connectLineSchema = z.object({
-  channelId: z.string().min(1),
-  channelSecret: z.string().min(1)
-});
+const connectLineSchema = z
+  .object({
+    channelId: z.string().min(1),
+    channelSecret: z.string().min(1),
+    loginChannelId: z.string().min(1).optional(),
+    loginChannelSecret: z.string().min(1).optional()
+  })
+  .superRefine((value, ctx) => {
+    const hasLoginChannelId = value.loginChannelId !== undefined;
+    const hasLoginChannelSecret = value.loginChannelSecret !== undefined;
+
+    if (hasLoginChannelId !== hasLoginChannelSecret) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['loginChannelSecret'],
+        message: 'loginChannelId and loginChannelSecret must be provided together'
+      });
+    }
+  });
 
 const verifyWebhookSchema = z.object({
   verificationToken: z.string().min(1)
@@ -227,7 +242,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const snapshot = await onboardingService.connectLineCredentials({
         tenantId: connectMatch[1],
         channelId: payload.channelId,
-        channelSecret: payload.channelSecret
+        channelSecret: payload.channelSecret,
+        loginChannelId: payload.loginChannelId,
+        loginChannelSecret: payload.loginChannelSecret
       });
       return jsonResponse(200, snapshot);
     }

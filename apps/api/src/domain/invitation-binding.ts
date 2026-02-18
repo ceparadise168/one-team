@@ -57,4 +57,39 @@ export interface EmployeeBindingRecord {
   lineUserId: string;
   boundAt: string;
   employmentStatus: 'ACTIVE' | 'OFFBOARDED';
+  accessStatus?: EmployeeAccessStatus;
+  permissions?: Partial<EmployeePermissions>;
+  accessRequestedAt?: string;
+  accessReviewedAt?: string;
+  accessReviewedBy?: string;
+}
+
+export type EmployeeAccessStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface EmployeePermissions {
+  canInvite: boolean;
+  canRemove: boolean;
+}
+
+export interface EmployeeBindingAccessProfile extends Omit<EmployeeBindingRecord, 'permissions' | 'accessStatus'> {
+  accessStatus: EmployeeAccessStatus;
+  permissions: EmployeePermissions;
+}
+
+export const DEFAULT_EMPLOYEE_ACCESS_STATUS: EmployeeAccessStatus = 'PENDING';
+
+export const DEFAULT_EMPLOYEE_PERMISSIONS: EmployeePermissions = {
+  canInvite: false,
+  canRemove: false
+};
+
+export function normalizeEmployeeBindingRecord(record: EmployeeBindingRecord): EmployeeBindingAccessProfile {
+  return {
+    ...record,
+    accessStatus: record.accessStatus ?? DEFAULT_EMPLOYEE_ACCESS_STATUS,
+    permissions: {
+      canInvite: record.permissions?.canInvite ?? DEFAULT_EMPLOYEE_PERMISSIONS.canInvite,
+      canRemove: record.permissions?.canRemove ?? DEFAULT_EMPLOYEE_PERMISSIONS.canRemove
+    }
+  };
 }

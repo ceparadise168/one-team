@@ -29,9 +29,18 @@ export class StubLinePlatformClient implements LinePlatformClient {
   }
 
   async provisionResources(input: ProvisionLineResourcesInput): Promise<LineResources> {
+    const approvedRichMenuId =
+      input.existingResources?.approvedRichMenuId ??
+      input.existingResources?.richMenuId ??
+      `richmenu_${input.tenantId}`;
+    const pendingRichMenuId =
+      input.existingResources?.pendingRichMenuId ?? `richmenu_pending_${input.tenantId}`;
+
     return {
       liffId: input.existingResources?.liffId ?? `liff_${input.tenantId}`,
-      richMenuId: input.existingResources?.richMenuId ?? `richmenu_${input.tenantId}`,
+      richMenuId: approvedRichMenuId,
+      approvedRichMenuId,
+      pendingRichMenuId,
       webhookId: input.existingResources?.webhookId ?? `webhook_${input.tenantId}`,
       webhookUrl: input.webhookUrl
     };
@@ -103,30 +112,23 @@ export class RealLinePlatformClient implements LinePlatformClient {
       operation: 'set webhook endpoint'
     });
 
-    let richMenuId = input.existingResources?.richMenuId;
-    if (!richMenuId) {
-      const richMenuCreated = await this.callLineJson('/v2/bot/richmenu', {
-        method: 'POST',
-        accessToken,
-        body: this.createDefaultRichMenuRequest(input.tenantId),
-        operation: 'create rich menu'
-      });
+    const approvedRichMenuId =
+      input.existingResources?.approvedRichMenuId ??
+      input.existingResources?.richMenuId ??
+      (await this.createRichMenu(accessToken, this.createRichMenuRequest(input.tenantId, 'approved')));
 
-      const parsed = richMenuCreated as { richMenuId?: string };
-      if (!parsed.richMenuId?.trim()) {
-        throw new Error('LINE API create rich menu response missing richMenuId');
-      }
-      richMenuId = parsed.richMenuId.trim();
-    }
+    const pendingRichMenuId =
+      input.existingResources?.pendingRichMenuId ??
+      (await this.createRichMenu(accessToken, this.createRichMenuRequest(input.tenantId, 'pending')));
 
-    await this.uploadRichMenuImage({
-      accessToken,
-      richMenuId
-    });
+    await this.uploadRichMenuImage({ accessToken, richMenuId: approvedRichMenuId });
+    await this.uploadRichMenuImage({ accessToken, richMenuId: pendingRichMenuId });
 
     return {
       ...input.existingResources,
-      richMenuId,
+      richMenuId: approvedRichMenuId,
+      approvedRichMenuId,
+      pendingRichMenuId,
       webhookId: input.existingResources?.webhookId ?? `webhook_${input.tenantId}`,
       webhookUrl: input.webhookUrl
     };
@@ -259,7 +261,26 @@ export class RealLinePlatformClient implements LinePlatformClient {
     }
   }
 
-  private createDefaultRichMenuRequest(tenantId: string): {
+  private async createRichMenu(
+    accessToken: string,
+    payload: ReturnType<RealLinePlatformClient['createRichMenuRequest']>
+  ): Promise<string> {
+    const richMenuCreated = await this.callLineJson('/v2/bot/richmenu', {
+      method: 'POST',
+      accessToken,
+      body: payload,
+      operation: 'create rich menu'
+    });
+
+    const parsed = richMenuCreated as { richMenuId?: string };
+    if (!parsed.richMenuId?.trim()) {
+      throw new Error('LINE API create rich menu response missing richMenuId');
+    }
+
+    return parsed.richMenuId.trim();
+  }
+
+  private createRichMenuRequest(tenantId: string, variant: 'pending' | 'approved'): {
     size: {
       width: number;
       height: number;
@@ -280,13 +301,39 @@ export class RealLinePlatformClient implements LinePlatformClient {
       };
     }>;
   } {
+    if (variant === 'pending') {
+      return {
+        size: {
+          width: 2500,
+          height: 843
+        },
+        selected: true,
+        name: `one-team-${tenantId}-pending`,
+        chatBarText: '申請開通',
+        areas: [
+          {
+            bounds: { x: 0, y: 0, width: 833, height: 843 },
+            action: { type: 'message', text: '申請開通' }
+          },
+          {
+            bounds: { x: 833, y: 0, width: 834, height: 843 },
+            action: { type: 'message', text: '等待審核' }
+          },
+          {
+            bounds: { x: 1667, y: 0, width: 833, height: 843 },
+            action: { type: 'message', text: '聯絡管理員' }
+          }
+        ]
+      };
+    }
+
     return {
       size: {
         width: 2500,
         height: 843
       },
       selected: true,
-      name: `one-team-${tenantId}`,
+      name: `one-team-${tenantId}-approved`,
       chatBarText: '員工服務',
       areas: [
         {

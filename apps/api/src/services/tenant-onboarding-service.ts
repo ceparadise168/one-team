@@ -3,6 +3,8 @@ import {
   TenantRecord,
   TenantSetupSnapshot,
   createTenantRecord,
+  getTenantApprovedRichMenuId,
+  getTenantPendingRichMenuId,
   toTenantSetupSnapshot
 } from '../domain/tenant.js';
 import { NotFoundError, ValidationError } from '../errors.js';
@@ -134,7 +136,8 @@ export class TenantOnboardingService {
     if (
       record.setup.provisioning.status === 'SUCCEEDED' &&
       record.line.resources.liffId &&
-      record.line.resources.richMenuId &&
+      (record.line.resources.approvedRichMenuId || record.line.resources.richMenuId) &&
+      record.line.resources.pendingRichMenuId &&
       record.line.resources.webhookId
     ) {
       return {
@@ -162,6 +165,15 @@ export class TenantOnboardingService {
         ...record.line.resources,
         ...resources
       };
+      record.line.resources.approvedRichMenuId = getTenantApprovedRichMenuId(
+        record.line.resources,
+        record.tenantId
+      );
+      record.line.resources.pendingRichMenuId = getTenantPendingRichMenuId(
+        record.line.resources,
+        record.tenantId
+      );
+      record.line.resources.richMenuId = record.line.resources.approvedRichMenuId;
       record.setup.provisioning = {
         status: 'SUCCEEDED',
         updatedAt: this.options.now().toISOString()

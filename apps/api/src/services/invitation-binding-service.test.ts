@@ -118,6 +118,36 @@ test('batch dispatch isolates failed recipients and continues valid ones', async
   assert.equal(byEmployee.get('E011')?.status, 'FAILED');
 });
 
+test('authorized share payload can be used for one-time binding', async () => {
+  const now = new Date('2026-02-18T00:00:00.000Z');
+  const ctx = createTestContext(now);
+
+  const tenant = await ctx.onboarding.createTenant({
+    tenantName: 'ACME',
+    adminEmail: 'hr@acme.test'
+  });
+
+  const share = await ctx.invitationBinding.createInviteSharePayload({
+    tenantId: tenant.tenantId,
+    employeeId: 'E020',
+    ttlMinutes: 30
+  });
+
+  const start = await ctx.invitationBinding.startBinding({
+    lineIdToken: 'line-id:U1020',
+    invitationToken: share.invitationToken
+  });
+
+  const complete = await ctx.invitationBinding.completeBinding({
+    bindSessionToken: start.bindSessionToken,
+    employeeId: 'E020',
+    bindingCode: share.oneTimeBindingCode
+  });
+
+  assert.equal(complete.employeeId, 'E020');
+  assert.equal(complete.lineUserId, 'U1020');
+});
+
 test('binding is locked for repeated invalid one-time codes', async () => {
   const now = new Date('2026-02-18T00:00:00.000Z');
   const ctx = createTestContext(now);

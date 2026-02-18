@@ -3,7 +3,8 @@ import {
   BindingSessionRecord,
   EmployeeBindingRecord,
   EmployeeEnrollmentRecord,
-  InvitationRecord
+  InvitationRecord,
+  normalizeEmployeeBindingRecord
 } from '../domain/invitation-binding.js';
 
 export interface InvitationRepository {
@@ -133,11 +134,13 @@ export class InMemoryEmployeeBindingRepository implements EmployeeBindingReposit
   }
 
   async findByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {
-    return this.byLineUser.get(this.lineKey(tenantId, lineUserId)) ?? null;
+    const record = this.byLineUser.get(this.lineKey(tenantId, lineUserId));
+    return record ? normalizeEmployeeBindingRecord(record) : null;
   }
 
   async findByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null> {
-    return this.byEmployee.get(this.employeeKey(tenantId, employeeId)) ?? null;
+    const record = this.byEmployee.get(this.employeeKey(tenantId, employeeId));
+    return record ? normalizeEmployeeBindingRecord(record) : null;
   }
 
   async findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {
@@ -161,7 +164,8 @@ export class InMemoryEmployeeBindingRepository implements EmployeeBindingReposit
   }
 
   async upsert(record: EmployeeBindingRecord): Promise<void> {
-    this.byLineUser.set(this.lineKey(record.tenantId, record.lineUserId), record);
-    this.byEmployee.set(this.employeeKey(record.tenantId, record.employeeId), record);
+    const normalized = normalizeEmployeeBindingRecord(record);
+    this.byLineUser.set(this.lineKey(normalized.tenantId, normalized.lineUserId), normalized);
+    this.byEmployee.set(this.employeeKey(normalized.tenantId, normalized.employeeId), normalized);
   }
 }

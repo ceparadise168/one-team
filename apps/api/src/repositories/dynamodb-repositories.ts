@@ -14,7 +14,8 @@ import {
   BindingSessionRecord,
   EmployeeBindingRecord,
   EmployeeEnrollmentRecord,
-  InvitationRecord
+  InvitationRecord,
+  normalizeEmployeeBindingRecord
 } from '../domain/invitation-binding.js';
 import { AuditEventRecord, OffboardingJobRecord } from '../domain/offboarding.js';
 import { TenantRecord } from '../domain/tenant.js';
@@ -451,7 +452,8 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
     );
 
     const item = response.Items?.[0] as Record<string, unknown> | undefined;
-    return stripMetadata<EmployeeBindingRecord>(item);
+    const record = stripMetadata<EmployeeBindingRecord>(item);
+    return record ? normalizeEmployeeBindingRecord(record) : null;
   }
 
   async findByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null> {
@@ -462,7 +464,8 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
       })
     );
 
-    return stripMetadata<EmployeeBindingRecord>(response.Item as Record<string, unknown> | undefined);
+    const record = stripMetadata<EmployeeBindingRecord>(response.Item as Record<string, unknown> | undefined);
+    return record ? normalizeEmployeeBindingRecord(record) : null;
   }
 
   async findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {
@@ -486,15 +489,16 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
   }
 
   async upsert(record: EmployeeBindingRecord): Promise<void> {
+    const normalized = normalizeEmployeeBindingRecord(record);
     await this.client.send(
       new PutCommand({
         TableName: this.tableName,
         Item: {
-          ...this.bindingKey(record.tenantId, record.employeeId),
+          ...this.bindingKey(normalized.tenantId, normalized.employeeId),
           entityType: 'EMPLOYEE_BINDING',
-          ...record,
-          tenant_id: record.tenantId,
-          line_user_id: record.lineUserId
+          ...normalized,
+          tenant_id: normalized.tenantId,
+          line_user_id: normalized.lineUserId
         }
       })
     );

@@ -133,6 +133,7 @@ pnpm --filter @one-team/api test
 | `DIGITAL_ID_SIGNING_SECRET` | no | `digital-id-dev-secret` | Dynamic ID signature key |
 | `ACCESS_TOKEN_SECRET` | no | `dev-secret-change-me` | Access JWT signing key |
 | `SCANNER_API_KEY` | no | `dev-scanner-key` | Scanner verification API key |
+| `ADMIN_TOKEN` | no | `admin-token` | Admin API bearer token used for `/v1/admin/*` routes |
 
 For production, set all security-sensitive values explicitly and rotate them regularly.
 
@@ -264,6 +265,21 @@ cp .env.example .env
 
 ./scripts/smoke-test.sh
 ```
+
+The default smoke script now runs a full governance flow:
+
+1. Create tenant + connect/provision/verify LINE
+2. Bind a manager employee
+3. Submit access request
+4. Admin approves `canInvite` + `canRemove`
+5. Manager generates one-time invite payload
+6. Invitee binds with invite link + one-time binding code
+7. Manager offboards invitee
+8. Scanner verify flips from valid to invalid
+
+Optional env flags for smoke flow:
+- `RUN_DELEGATED_FLOW=true|false` (default `true`)
+- `INVITEE_EMAIL`, `INVITEE_EMPLOYEE_ID`, `INVITEE_LINE_ID_TOKEN`
 
 If Messaging API and LINE Login use separate channels, set both pairs in `.env`:
 - `CHANNEL_ID` / `CHANNEL_SECRET` (Messaging API)

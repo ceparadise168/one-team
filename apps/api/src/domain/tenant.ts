@@ -9,6 +9,8 @@ export interface SetupStep {
 export interface LineResources {
   liffId?: string;
   richMenuId?: string;
+  pendingRichMenuId?: string;
+  approvedRichMenuId?: string;
   webhookId?: string;
   webhookUrl?: string;
 }
@@ -82,4 +84,12 @@ export function toTenantSetupSnapshot(record: TenantRecord): TenantSetupSnapshot
     line: record.line,
     setup: record.setup
   };
+}
+
+export function getTenantApprovedRichMenuId(resources: LineResources, tenantId: string): string {
+  return resources.approvedRichMenuId ?? resources.richMenuId ?? `richmenu_${tenantId}`;
+}
+
+export function getTenantPendingRichMenuId(resources: LineResources, tenantId: string): string {
+  return resources.pendingRichMenuId ?? `richmenu_pending_${tenantId}`;
 }

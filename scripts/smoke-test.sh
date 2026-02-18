@@ -79,8 +79,12 @@ TENANT_NAME="${TENANT_NAME:-ACME}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-hr@acme.test}"
 RECIPIENT_EMAIL="${RECIPIENT_EMAIL:-user@acme.test}"
 EMPLOYEE_ID="${EMPLOYEE_ID:-E001}"
+INVITEE_EMAIL="${INVITEE_EMAIL:-invitee@acme.test}"
+INVITEE_EMPLOYEE_ID="${INVITEE_EMPLOYEE_ID:-E002}"
+INVITEE_LINE_ID_TOKEN="${INVITEE_LINE_ID_TOKEN:-line-id:U2002}"
 TTL_MINUTES="${TTL_MINUTES:-60}"
 RUN_OFFBOARD_CHECK="${RUN_OFFBOARD_CHECK:-true}"
+RUN_DELEGATED_FLOW="${RUN_DELEGATED_FLOW:-true}"
 OFFBOARD_VERIFY_RETRIES="${OFFBOARD_VERIFY_RETRIES:-10}"
 OFFBOARD_VERIFY_INTERVAL_SECONDS="${OFFBOARD_VERIFY_INTERVAL_SECONDS:-2}"
 
@@ -94,6 +98,13 @@ api_post_public() {
   local path="$1"
   local body="$2"
   api_json_request "POST" "$path" "$body"
+}
+
+api_post_authorized() {
+  local path="$1"
+  local body="$2"
+  local authorization_header="$3"
+  api_json_request "POST" "$path" "$body" "Authorization: $authorization_header"
 }
 
 api_get_authorized() {
@@ -150,7 +161,7 @@ api_json_request() {
   rm -f "$tmp_body"
 }
 
-echo "[1/8] Creating tenant..."
+echo "[1/10] Creating tenant..."
 TENANT_ID="$(
   api_post_admin "/v1/admin/tenants" \
     "{\"tenantName\":\"$TENANT_NAME\",\"adminEmail\":\"$ADMIN_EMAIL\"}" |
@@ -158,7 +169,7 @@ TENANT_ID="$(
 )"
 echo "  tenantId=$TENANT_ID"
 
-echo "[2/8] Connecting LINE channel..."
+echo "[2/10] Connecting LINE channel..."
 api_post_admin "/v1/admin/tenants/$TENANT_ID/line/connect" \
   "{
     \"channelId\":\"$CHANNEL_ID\",
@@ -167,14 +178,14 @@ api_post_admin "/v1/admin/tenants/$TENANT_ID/line/connect" \
     \"loginChannelSecret\":\"$LOGIN_CHANNEL_SECRET\"
   }" >/dev/null
 
-echo "[3/8] Provisioning LINE resources..."
+echo "[3/10] Provisioning LINE resources..."
 api_post_admin "/v1/admin/tenants/$TENANT_ID/line/provision" '{}' >/dev/null
 
-echo "[4/8] Verifying webhook..."
+echo "[4/10] Verifying webhook..."
 api_post_admin "/v1/admin/tenants/$TENANT_ID/line/webhook/verify" \
   "{\"verificationToken\":\"$WEBHOOK_VERIFY_TOKEN\"}" >/dev/null
 
-echo "[5/8] Creating and dispatching batch invite..."
+echo "[5/10] Creating and dispatching batch invite..."
 BATCH_JSON="$(
   api_post_admin "/v1/admin/tenants/$TENANT_ID/invites/batch-email" \
     "{\"ttlMinutes\":$TTL_MINUTES,\"recipients\":[{\"email\":\"$RECIPIENT_EMAIL\",\"employeeId\":\"$EMPLOYEE_ID\"}]}"
@@ -184,7 +195,7 @@ INVITATION_TOKEN="$(echo "$BATCH_JSON" | jq -er '.recipients[0].invitationToken'
 BINDING_CODE="$(echo "$BATCH_JSON" | jq -er '.recipients[0].oneTimeBindingCode')"
 api_post_admin "/v1/admin/tenants/$TENANT_ID/invites/batch-jobs/$JOB_ID/dispatch" '{}' >/dev/null
 
-echo "[6/8] Binding employee..."
+echo "[6/10] Binding employee..."
 BIND_SESSION_TOKEN="$(
   api_post_public "/v1/public/bind/start" \
     "{\"lineIdToken\":\"$LINE_ID_TOKEN\",\"invitationToken\":\"$INVITATION_TOKEN\"}" |
@@ -196,14 +207,52 @@ BIND_COMPLETE="$(
 )"
 ACCESS_TOKEN="$(echo "$BIND_COMPLETE" | jq -er '.auth.accessToken')"
 
-echo "[7/8] Fetching digital ID and scanner verify..."
+echo "[7/8] Submitting access request and approving delegated permissions..."
+ACCESS_REQUEST_JSON="$(
+  api_post_authorized "/v1/liff/tenants/$TENANT_ID/me/access-request" "{}" "Bearer $ACCESS_TOKEN"
+)"
+ACCESS_REQUEST_STATUS="$(echo "$ACCESS_REQUEST_JSON" | jq -r '.accessStatus // "UNKNOWN"')"
+if [[ "$ACCESS_REQUEST_STATUS" != "PENDING" && "$ACCESS_REQUEST_STATUS" != "APPROVED" ]]; then
+  echo "Unexpected access request status: $ACCESS_REQUEST_STATUS" >&2
+  echo "$ACCESS_REQUEST_JSON" | jq . >&2 || echo "$ACCESS_REQUEST_JSON" >&2
+  exit 1
+fi
+api_post_admin "/v1/admin/tenants/$TENANT_ID/employees/$EMPLOYEE_ID/access-decision" \
+  '{"decision":"APPROVE","reviewerId":"hr-admin","permissions":{"canInvite":true,"canRemove":true}}' >/dev/null
+
+TARGET_EMPLOYEE_ID="$EMPLOYEE_ID"
+TARGET_ACCESS_TOKEN="$ACCESS_TOKEN"
+
+if [[ "$RUN_DELEGATED_FLOW" == "true" ]]; then
+  echo "[8/10] Delegated inviter creates invite and binds invitee..."
+  INVITEE_SHARE_JSON="$(
+    api_post_authorized "/v1/liff/tenants/$TENANT_ID/me/invites" \
+      "{\"ttlMinutes\":$TTL_MINUTES,\"usageLimit\":1,\"employeeId\":\"$INVITEE_EMPLOYEE_ID\",\"email\":\"$INVITEE_EMAIL\"}" \
+      "Bearer $ACCESS_TOKEN"
+  )"
+  INVITEE_INVITATION_TOKEN="$(echo "$INVITEE_SHARE_JSON" | jq -er '.invitationToken')"
+  INVITEE_BINDING_CODE="$(echo "$INVITEE_SHARE_JSON" | jq -er '.oneTimeBindingCode')"
+
+  INVITEE_BIND_SESSION_TOKEN="$(
+    api_post_public "/v1/public/bind/start" \
+      "{\"lineIdToken\":\"$INVITEE_LINE_ID_TOKEN\",\"invitationToken\":\"$INVITEE_INVITATION_TOKEN\"}" |
+      jq -er '.bindSessionToken'
+  )"
+
+  INVITEE_BIND_COMPLETE="$(
+    api_post_public "/v1/public/bind/complete" \
+      "{\"bindSessionToken\":\"$INVITEE_BIND_SESSION_TOKEN\",\"employeeId\":\"$INVITEE_EMPLOYEE_ID\",\"bindingCode\":\"$INVITEE_BINDING_CODE\"}"
+  )"
+  TARGET_ACCESS_TOKEN="$(echo "$INVITEE_BIND_COMPLETE" | jq -er '.auth.accessToken')"
+  TARGET_EMPLOYEE_ID="$INVITEE_EMPLOYEE_ID"
+fi
+
+echo "[9/10] Fetching digital ID and scanner verify..."
 DIGITAL_PAYLOAD="$(
-  api_get_authorized "/v1/liff/tenants/$TENANT_ID/me/digital-id" "Bearer $ACCESS_TOKEN" |
+  api_get_authorized "/v1/liff/tenants/$TENANT_ID/me/digital-id" "Bearer $TARGET_ACCESS_TOKEN" |
     jq -er '.payload'
 )"
-VERIFY_BEFORE="$(
-  api_post_scanner "$DIGITAL_PAYLOAD"
-)"
+VERIFY_BEFORE="$(api_post_scanner "$DIGITAL_PAYLOAD")"
 VALID_BEFORE="$(echo "$VERIFY_BEFORE" | jq -r 'if .valid == null then "INVALID" else (.valid | tostring) end')"
 if [[ "$VALID_BEFORE" != "true" && "$VALID_BEFORE" != "false" ]]; then
   echo "Unexpected scanner verify response before offboard." >&2
@@ -217,9 +266,16 @@ if [[ "$VALID_BEFORE" != "true" ]]; then
 fi
 
 if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
-  echo "[8/8] Offboarding and re-verifying scanner..."
-  api_post_admin "/v1/admin/tenants/$TENANT_ID/employees/$EMPLOYEE_ID/offboard" \
-    '{"actorId":"hr-admin"}' >/dev/null
+  echo "[10/10] Offboarding and re-verifying scanner..."
+
+  if [[ "$RUN_DELEGATED_FLOW" == "true" ]]; then
+    api_post_authorized "/v1/admin/tenants/$TENANT_ID/employees/$TARGET_EMPLOYEE_ID/offboard" \
+      '{}' \
+      "Bearer $ACCESS_TOKEN" >/dev/null
+  else
+    api_post_admin "/v1/admin/tenants/$TENANT_ID/employees/$TARGET_EMPLOYEE_ID/offboard" \
+      '{"actorId":"hr-admin"}' >/dev/null
+  fi
 
   VALID_AFTER="true"
   REASON_AFTER="UNKNOWN"
@@ -248,9 +304,9 @@ if [[ "$RUN_OFFBOARD_CHECK" == "true" ]]; then
     exit 1
   fi
 else
-  echo "[8/8] Offboard check skipped (RUN_OFFBOARD_CHECK=false)."
+  echo "[10/10] Offboard check skipped (RUN_OFFBOARD_CHECK=false)."
 fi
 
 echo
 echo "Smoke test completed successfully."
-echo "tenantId=$TENANT_ID employeeId=$EMPLOYEE_ID"
+echo "tenantId=$TENANT_ID employeeId=$TARGET_EMPLOYEE_ID"

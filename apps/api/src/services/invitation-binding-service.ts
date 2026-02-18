@@ -4,8 +4,11 @@ import {
   BindingSessionRecord,
   EmployeeBindingRecord,
   EmployeeEnrollmentRecord,
-  InvitationRecord
+  InvitationRecord,
+  DEFAULT_EMPLOYEE_ACCESS_STATUS,
+  DEFAULT_EMPLOYEE_PERMISSIONS
 } from '../domain/invitation-binding.js';
+import { getTenantPendingRichMenuId } from '../domain/tenant.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import { LineAuthClient } from '../line/line-auth-client.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';
@@ -54,6 +57,25 @@ export interface BatchInviteOutput {
   tenantId: string;
   createdAt: string;
   recipients: BatchInviteJobRecord['recipients'];
+}
+
+export interface CreateInviteSharePayloadInput {
+  tenantId: string;
+  employeeId: string;
+  ttlMinutes: number;
+  usageLimit?: number;
+  email?: string;
+}
+
+export interface CreateInviteSharePayloadOutput {
+  invitationId: string;
+  invitationToken: string;
+  invitationUrl: string;
+  employeeId: string;
+  oneTimeBindingCode: string;
+  expiresAt: string;
+  usageLimit: number;
+  qrPayload: string;
 }
 
 export interface StartBindingInput {
@@ -245,6 +267,45 @@ export class InvitationBindingService {
     return jobRecord;
   }
 
+  async createInviteSharePayload(
+    input: CreateInviteSharePayloadInput
+  ): Promise<CreateInviteSharePayloadOutput> {
+    await this.assertTenantExists(input.tenantId);
+
+    const normalizedEmployeeId = input.employeeId.trim();
+    if (!normalizedEmployeeId) {
+      throw new ValidationError('employeeId is required');
+    }
+
+    const usageLimit = input.usageLimit ?? 1;
+    const invitation = await this.createInvitation({
+      tenantId: input.tenantId,
+      ttlMinutes: input.ttlMinutes,
+      usageLimit
+    });
+
+    const oneTimeBindingCode = this.randomBindingCode();
+    const enrollment: EmployeeEnrollmentRecord = {
+      tenantId: input.tenantId,
+      employeeId: normalizedEmployeeId,
+      email: input.email?.trim().toLowerCase(),
+      bindingCodeHash: this.hash(oneTimeBindingCode),
+      codeIssuedAt: this.options.now().toISOString()
+    };
+    await this.enrollmentRepository.upsert(enrollment);
+
+    return {
+      invitationId: invitation.invitationId,
+      invitationToken: invitation.invitationToken,
+      invitationUrl: invitation.invitationUrl,
+      employeeId: normalizedEmployeeId,
+      oneTimeBindingCode,
+      expiresAt: invitation.expiresAt,
+      usageLimit: invitation.usageLimit,
+      qrPayload: invitation.invitationUrl
+    };
+  }
+
   async dispatchBatchInviteJob(input: {
     tenantId: string;
     jobId: string;
@@ -400,7 +461,7 @@ export class InvitationBindingService {
 
     try {
       const tenant = await this.tenantRepository.findById(session.tenantId);
-      const richMenuId = tenant?.line.resources.richMenuId ?? `richmenu_${session.tenantId}`;
+      const richMenuId = getTenantPendingRichMenuId(tenant?.line.resources ?? {}, session.tenantId);
       await this.linePlatformClient.linkRichMenu({
         tenantId: session.tenantId,
         lineUserId: session.lineUserId,
@@ -423,7 +484,9 @@ export class InvitationBindingService {
       employeeId: input.employeeId,
       lineUserId: session.lineUserId,
       boundAt: now.toISOString(),
-      employmentStatus: 'ACTIVE'
+      employmentStatus: 'ACTIVE',
+      accessStatus: DEFAULT_EMPLOYEE_ACCESS_STATUS,
+      permissions: { ...DEFAULT_EMPLOYEE_PERMISSIONS }
     };
 
     await this.employeeBindingRepository.upsert(binding);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { InMemoryLineCredentialStore } from '../security/line-credential-store.js';
 import { RealLinePlatformClient } from './line-platform-client.js';
 
-test('real line platform client provisions webhook endpoint and rich menu', async () => {
+test('real line platform client provisions webhook endpoint and dual rich menus', async () => {
   const credentialStore = new InMemoryLineCredentialStore();
   await credentialStore.upsertTenantCredentials('tenant_a', {
     channelId: '2000000000',
@@ -16,6 +16,7 @@ test('real line platform client provisions webhook endpoint and rich menu', asyn
     body?: string | Uint8Array | ArrayBuffer;
     contentType?: string | null;
   }> = [];
+  let richMenuCreateCount = 0;
   const fetchFn: typeof fetch = async (input, init) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -54,7 +55,8 @@ test('real line platform client provisions webhook endpoint and rich menu', asyn
     }
 
     if (url.endsWith('/v2/bot/richmenu')) {
-      return new Response(JSON.stringify({ richMenuId: 'richmenu-real-001' }), {
+      richMenuCreateCount += 1;
+      return new Response(JSON.stringify({ richMenuId: `richmenu-real-00${richMenuCreateCount}` }), {
         status: 200,
         headers: {
           'content-type': 'application/json'
@@ -62,7 +64,10 @@ test('real line platform client provisions webhook endpoint and rich menu', asyn
       });
     }
 
-    if (url.endsWith('/v2/bot/richmenu/richmenu-real-001/content')) {
+    if (
+      url.endsWith('/v2/bot/richmenu/richmenu-real-001/content') ||
+      url.endsWith('/v2/bot/richmenu/richmenu-real-002/content')
+    ) {
       return new Response('', { status: 200 });
     }
 
@@ -82,15 +87,26 @@ test('real line platform client provisions webhook endpoint and rich menu', asyn
   });
 
   assert.equal(resources.richMenuId, 'richmenu-real-001');
+  assert.equal(resources.approvedRichMenuId, 'richmenu-real-001');
+  assert.equal(resources.pendingRichMenuId, 'richmenu-real-002');
   assert.equal(resources.webhookUrl, 'https://api.example.com/v1/line/webhook/tenant_a');
   assert.ok(calls.some((call) => call.url.endsWith('/v2/bot/channel/webhook/endpoint')));
-  assert.ok(calls.some((call) => call.url.endsWith('/v2/bot/richmenu')));
-  const uploadCall = calls.find((call) => call.url.endsWith('/v2/bot/richmenu/richmenu-real-001/content'));
-  assert.ok(uploadCall);
-  assert.equal(uploadCall.method, 'POST');
-  assert.equal(uploadCall.contentType, 'image/png');
-  assert.ok(uploadCall.body instanceof Uint8Array);
-  assert.ok((uploadCall.body as Uint8Array).byteLength > 0);
+  const createCalls = calls.filter((call) => call.url.endsWith('/v2/bot/richmenu'));
+  assert.equal(createCalls.length, 2);
+  const uploadCalls = calls.filter((call) => call.url.includes('/v2/bot/richmenu/') && call.url.endsWith('/content'));
+  assert.equal(uploadCalls.length, 2);
+  assert.ok(
+    uploadCalls.some((call) => call.url.endsWith('/v2/bot/richmenu/richmenu-real-001/content'))
+  );
+  assert.ok(
+    uploadCalls.some((call) => call.url.endsWith('/v2/bot/richmenu/richmenu-real-002/content'))
+  );
+  for (const uploadCall of uploadCalls) {
+    assert.equal(uploadCall.method, 'POST');
+    assert.equal(uploadCall.contentType, 'image/png');
+    assert.ok(uploadCall.body instanceof Uint8Array);
+    assert.ok((uploadCall.body as Uint8Array).byteLength > 0);
+  }
 });
 
 test('real line platform client links and unlinks rich menu for a tenant user', async () => {
@@ -160,6 +176,7 @@ test('real line platform client fails provision when rich menu image upload fail
     channelSecret: 'line-channel-secret-1234'
   });
 
+  let richMenuCreateCount = 0;
   const fetchFn: typeof fetch = async (input) => {
     const url = String(input);
 
@@ -189,7 +206,8 @@ test('real line platform client fails provision when rich menu image upload fail
     }
 
     if (url.endsWith('/v2/bot/richmenu')) {
-      return new Response(JSON.stringify({ richMenuId: 'richmenu-real-001' }), {
+      richMenuCreateCount += 1;
+      return new Response(JSON.stringify({ richMenuId: `richmenu-real-00${richMenuCreateCount}` }), {
         status: 200,
         headers: {
           'content-type': 'application/json'

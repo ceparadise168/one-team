@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   UnauthorizedError,
   ValidationError
@@ -59,6 +60,7 @@ import { AuthSessionService } from './services/auth-session-service.js';
 import { DigitalIdService } from './services/digital-id-service.js';
 import { InvitationBindingService } from './services/invitation-binding-service.js';
 import { OffboardingService } from './services/offboarding-service.js';
+import { EmployeeAccessGovernanceService } from './services/employee-access-governance-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 
 const createTenantSchema = z.object({
@@ -101,6 +103,13 @@ const createInvitationSchema = z.object({
   usageLimit: z.number().int().min(1).max(50).default(1)
 });
 
+const createSelfInviteSchema = z.object({
+  employeeId: z.string().min(1),
+  email: z.string().email().optional(),
+  ttlMinutes: z.number().int().min(1).max(1440).default(60),
+  usageLimit: z.number().int().min(1).max(50).default(1)
+});
+
 const batchInviteSchema = z.object({
   ttlMinutes: z.number().int().min(1).max(1440).default(60),
   recipients: z
@@ -131,16 +140,27 @@ const refreshSessionSchema = z.object({
   refreshToken: z.string().min(1)
 });
 
+const accessDecisionSchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  reviewerId: z.string().min(1).optional(),
+  permissions: z
+    .object({
+      canInvite: z.boolean().optional(),
+      canRemove: z.boolean().optional()
+    })
+    .optional()
+});
+
 const scannerVerifySchema = z.object({
   payload: z.string().min(1)
 });
 
 const offboardEmployeeSchema = z.object({
-  actorId: z.string().min(1)
+  actorId: z.string().min(1).optional()
 });
 
 const retryOffboardingJobSchema = z.object({
-  actorId: z.string().min(1)
+  actorId: z.string().min(1).optional()
 });
 
 const useDynamoDbRepositories = process.env.USE_DYNAMODB_REPOSITORIES === 'true';
@@ -278,6 +298,15 @@ const offboardingService = new OffboardingService(
   }
 );
 
+const employeeAccessGovernanceService = new EmployeeAccessGovernanceService(
+  employeeBindingRepository,
+  tenantRepository,
+  linePlatformClient,
+  {
+    now: () => new Date()
+  }
+);
+
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
     const method = event.httpMethod.toUpperCase();
@@ -292,11 +321,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return handleLineWebhookEvent(event, lineWebhookMatch[1]);
     }
 
-    if (path.startsWith('/v1/admin/') && !isAdminAuthorized(event)) {
-      return jsonResponse(401, { error: 'Missing admin authorization token' });
-    }
-
     if (method === 'POST' && path === '/v1/admin/tenants') {
+      assertAdminAuthorized(event);
       const payload = createTenantSchema.parse(parseBody(event));
       const snapshot = await onboardingService.createTenant(payload);
       return jsonResponse(201, snapshot);
@@ -304,6 +330,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     const connectMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/connect$/);
     if (method === 'POST' && connectMatch) {
+      assertAdminAuthorized(event);
       const payload = connectLineSchema.parse(parseBody(event));
       const snapshot = await onboardingService.connectLineCredentials({
         tenantId: connectMatch[1],
@@ -317,12 +344,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     const provisionMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/provision$/);
     if (method === 'POST' && provisionMatch) {
+      assertAdminAuthorized(event);
       const result = await onboardingService.provisionLineResources(provisionMatch[1]);
       return jsonResponse(200, result);
     }
 
     const verifyMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/webhook\/verify$/);
     if (method === 'POST' && verifyMatch) {
+      assertAdminAuthorized(event);
       const payload = verifyWebhookSchema.parse(parseBody(event));
       const snapshot = await onboardingService.verifyWebhook({
         tenantId: verifyMatch[1],
@@ -333,12 +362,18 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     const statusMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/setup-status$/);
     if (method === 'GET' && statusMatch) {
+      assertAdminAuthorized(event);
       const snapshot = await onboardingService.getSetupStatus(statusMatch[1]);
       return jsonResponse(200, snapshot);
     }
 
     const createInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites$/);
     if (method === 'POST' && createInviteMatch) {
+      await authorizeAdminOrPermission({
+        event,
+        tenantId: createInviteMatch[1],
+        permission: 'canInvite'
+      });
       const payload = createInvitationSchema.parse(parseBody(event));
       const invitation = await invitationBindingService.createInvitation({
         tenantId: createInviteMatch[1],
@@ -350,6 +385,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     const batchInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-email$/);
     if (method === 'POST' && batchInviteMatch) {
+      await authorizeAdminOrPermission({
+        event,
+        tenantId: batchInviteMatch[1],
+        permission: 'canInvite'
+      });
       const payload = batchInviteSchema.parse(parseBody(event));
       const job = await invitationBindingService.createBatchInvites({
         tenantId: batchInviteMatch[1],
@@ -363,6 +403,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       /^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-jobs\/([^/]+)\/dispatch$/
     );
     if (method === 'POST' && dispatchBatchInviteMatch) {
+      assertAdminAuthorized(event);
       dispatchBatchInviteJobSchema.parse(parseBody(event));
       const job = await invitationBindingService.dispatchBatchInviteJob({
         tenantId: dispatchBatchInviteMatch[1],
@@ -416,31 +457,106 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       });
     }
 
+    const accessRequestMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/access-request$/);
+    if (accessRequestMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: accessRequestMatch[1]
+      });
+
+      if (method === 'GET') {
+        const profile = await employeeAccessGovernanceService.getAccessProfileByLineUser({
+          tenantId: principal.tenantId,
+          lineUserId: principal.lineUserId
+        });
+        return jsonResponse(200, profile);
+      }
+
+      if (method === 'POST') {
+        const profile = await employeeAccessGovernanceService.submitAccessRequestByLineUser({
+          tenantId: principal.tenantId,
+          lineUserId: principal.lineUserId
+        });
+        return jsonResponse(200, profile);
+      }
+    }
+
+    const createSelfInviteMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/invites$/);
+    if (method === 'POST' && createSelfInviteMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: createSelfInviteMatch[1]
+      });
+      await employeeAccessGovernanceService.requireEmployeePermission({
+        tenantId: principal.tenantId,
+        lineUserId: principal.lineUserId,
+        permission: 'canInvite'
+      });
+
+      const payload = createSelfInviteSchema.parse(parseBody(event));
+      const invitation = await invitationBindingService.createInviteSharePayload({
+        tenantId: principal.tenantId,
+        employeeId: payload.employeeId,
+        email: payload.email,
+        ttlMinutes: payload.ttlMinutes,
+        usageLimit: payload.usageLimit
+      });
+
+      return jsonResponse(201, invitation);
+    }
+
+    const accessDecisionMatch = path.match(
+      /^\/v1\/admin\/tenants\/([^/]+)\/employees\/([^/]+)\/access-decision$/
+    );
+    if (method === 'POST' && accessDecisionMatch) {
+      assertAdminAuthorized(event);
+      const payload = accessDecisionSchema.parse(parseBody(event));
+
+      const profile = await employeeAccessGovernanceService.decideAccess({
+        tenantId: accessDecisionMatch[1],
+        employeeId: accessDecisionMatch[2],
+        reviewerId: payload.reviewerId ?? 'admin-token',
+        decision: payload.decision,
+        permissions: payload.permissions
+      });
+
+      return jsonResponse(200, profile);
+    }
+
     const offboardMatch = path.match(
       /^\/v1\/admin\/tenants\/([^/]+)\/employees\/([^/]+)\/offboard$/
     );
     if (method === 'POST' && offboardMatch) {
       const payload = offboardEmployeeSchema.parse(parseBody(event));
+      const actor = await authorizeAdminOrPermission({
+        event,
+        tenantId: offboardMatch[1],
+        permission: 'canRemove'
+      });
       const result = await offboardingService.offboardEmployee({
         tenantId: offboardMatch[1],
         employeeId: offboardMatch[2],
-        actorId: payload.actorId
+        actorId: actor.actorType === 'ADMIN' ? payload.actorId ?? actor.actorId : actor.actorId
       });
       return jsonResponse(200, result);
     }
 
     const retryOffboardingMatch = path.match(/^\/v1\/admin\/offboarding\/jobs\/([^/]+)\/retry$/);
     if (method === 'POST' && retryOffboardingMatch) {
+      assertAdminAuthorized(event);
       const payload = retryOffboardingJobSchema.parse(parseBody(event));
       const job = await offboardingService.processOffboardingJob({
         jobId: retryOffboardingMatch[1],
-        actorId: payload.actorId
+        actorId: payload.actorId ?? 'hr-admin'
       });
       return jsonResponse(200, job);
     }
 
     const auditMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/audit-events$/);
     if (method === 'GET' && auditMatch) {
+      assertAdminAuthorized(event);
       const events = await offboardingService.listAuditEvents(auditMatch[1]);
       return jsonResponse(200, { events });
     }
@@ -483,6 +599,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     if (error instanceof UnauthorizedError) {
       return jsonResponse(401, { error: error.message });
+    }
+
+    if (error instanceof ForbiddenError) {
+      return jsonResponse(403, { error: error.message });
     }
 
     if (error instanceof ConflictError) {
@@ -595,14 +715,64 @@ function getHeaderCaseInsensitive(
   return undefined;
 }
 
-function isAdminAuthorized(event: APIGatewayProxyEvent): boolean {
-  const authorization = event.headers.authorization ?? event.headers.Authorization;
+function assertAdminAuthorized(event: APIGatewayProxyEvent): void {
+  if (!isAdminAuthorized(event)) {
+    throw new UnauthorizedError('Missing admin authorization token');
+  }
+}
 
-  if (!authorization) {
+function isAdminAuthorized(event: APIGatewayProxyEvent): boolean {
+  const bearerToken = extractBearerTokenOptional(event);
+  if (!bearerToken) {
     return false;
   }
 
-  return authorization.startsWith('Bearer ') && authorization.trim().length > 'Bearer '.length;
+  const expectedAdminToken = process.env.ADMIN_TOKEN ?? 'admin-token';
+  return bearerToken === expectedAdminToken;
+}
+
+async function authorizeAdminOrPermission(input: {
+  event: APIGatewayProxyEvent;
+  tenantId: string;
+  permission: 'canInvite' | 'canRemove';
+}): Promise<{
+  actorType: 'ADMIN' | 'EMPLOYEE';
+  actorId: string;
+}> {
+  if (isAdminAuthorized(input.event)) {
+    return {
+      actorType: 'ADMIN',
+      actorId: 'admin-token'
+    };
+  }
+
+  const principal = await requireEmployeePrincipal({
+    event: input.event,
+    authSessionService,
+    requiredTenantId: input.tenantId
+  });
+
+  await employeeAccessGovernanceService.requireEmployeePermission({
+    tenantId: principal.tenantId,
+    lineUserId: principal.lineUserId,
+    permission: input.permission
+  });
+
+  return {
+    actorType: 'EMPLOYEE',
+    actorId: principal.employeeId
+  };
+}
+
+function extractBearerTokenOptional(event: APIGatewayProxyEvent): string | null {
+  const authorization = event.headers.authorization ?? event.headers.Authorization;
+
+  if (!authorization || !authorization.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authorization.slice('Bearer '.length).trim();
+  return token || null;
 }
 
 function isScannerAuthorized(event: APIGatewayProxyEvent): boolean {

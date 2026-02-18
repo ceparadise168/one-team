@@ -46,6 +46,6 @@
 ## 8. Validation, testing, and release readiness
 
 - [x] 8.1 Add unit tests for invitation lifecycle, binding-code lockout, token/session revocation, and digital ID rotation
-- [ ] 8.2 Add integration tests for LINE webhook verification, bind flow, scanner verify API, and offboarding pipeline
-- [ ] 8.3 Add end-to-end tests covering setup wizard, employee binding journey, digital ID verification, and kill switch effect
-- [ ] 8.4 Define pilot release checklist with feature flags, rollback steps, and acceptance KPI verification
+- [x] 8.2 Add integration tests for LINE webhook verification, bind flow, scanner verify API, and offboarding pipeline
+- [x] 8.3 Add end-to-end tests covering setup wizard, employee binding journey, digital ID verification, and kill switch effect
+- [x] 8.4 Define pilot release checklist with feature flags, rollback steps, and acceptance KPI verification

@@ -12,6 +12,10 @@ Turn LINE into an employee super app.
 
 This README is written for open-source contributors so you can set up, develop, validate, and deploy with repeatable steps.
 
+Additional runbooks:
+
+- Development AWS + LINE setup: `docs/release/dev-line-aws-setup-runbook.md`
+
 ## Repository Status
 
 The application domain logic and tests are implemented, and the infrastructure baseline is deployable.

@@ -9,8 +9,8 @@ import {
 } from './errors.js';
 import { requireEmployeePrincipal } from './http/auth-middleware.js';
 import { jsonResponse } from './http/response.js';
-import { StubLineAuthClient } from './line/line-auth-client.js';
-import { StubLinePlatformClient } from './line/line-platform-client.js';
+import { RealLineAuthClient, StubLineAuthClient } from './line/line-auth-client.js';
+import { RealLinePlatformClient, StubLinePlatformClient } from './line/line-platform-client.js';
 import { InMemoryAccessControlRepository } from './repositories/access-control-repository.js';
 import {
   InMemoryBatchInviteJobRepository,
@@ -106,7 +106,6 @@ const retryOffboardingJobSchema = z.object({
 });
 
 const tenantRepository = new InMemoryTenantRepository();
-const linePlatformClient = new StubLinePlatformClient();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
   ? new AwsSecretsManagerLineCredentialStore({
@@ -114,6 +113,22 @@ const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
       secretPrefix: process.env.LINE_SECRET_PREFIX ?? 'one-team/dev/tenants'
     })
   : new InMemoryLineCredentialStore();
+
+const lineIntegrationMode = (process.env.LINE_INTEGRATION_MODE ?? 'stub').toLowerCase();
+const useRealLineClients = lineIntegrationMode === 'real';
+
+const linePlatformClient = useRealLineClients
+  ? new RealLinePlatformClient(lineCredentialStore, {
+      apiBaseUrl: process.env.LINE_API_BASE_URL ?? 'https://api.line.me',
+      webhookVerifyTokenPrefix: process.env.LINE_WEBHOOK_VERIFY_TOKEN_PREFIX ?? 'line-verify-'
+    })
+  : new StubLinePlatformClient();
+
+const lineAuthClient = useRealLineClients
+  ? new RealLineAuthClient(lineCredentialStore, {
+      apiBaseUrl: process.env.LINE_API_BASE_URL ?? 'https://api.line.me'
+    })
+  : new StubLineAuthClient();
 
 const onboardingService = new TenantOnboardingService(
   tenantRepository,
@@ -137,7 +152,7 @@ const invitationBindingService = new InvitationBindingService(
   new InMemoryBindingSessionRepository(),
   new InMemoryEmployeeEnrollmentRepository(),
   employeeBindingRepository,
-  new StubLineAuthClient(),
+  lineAuthClient,
   linePlatformClient,
   {
     inviteBaseUrl: process.env.INVITE_BASE_URL ?? 'https://app.example.com/invite',

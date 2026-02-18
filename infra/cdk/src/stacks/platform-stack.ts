@@ -71,6 +71,7 @@ export class PlatformStack extends Stack {
       memorySize: 512,
       environment: {
         USE_AWS_SECRETS_MANAGER: 'true',
+        LINE_INTEGRATION_MODE: 'real',
         LINE_SECRET_PREFIX: lineSecretPrefix,
         PUBLIC_API_BASE_URL: publicApiBaseUrl
       }

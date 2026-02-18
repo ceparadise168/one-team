@@ -125,7 +125,10 @@ export class OffboardingService {
     }
 
     try {
-      await this.linePlatformClient.unlinkRichMenu(job.lineUserId);
+      await this.linePlatformClient.unlinkRichMenu({
+        tenantId: job.tenantId,
+        lineUserId: job.lineUserId
+      });
       job.status = 'SUCCEEDED';
       job.updatedAt = this.options.now().toISOString();
       job.lastError = undefined;

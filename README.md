@@ -24,7 +24,7 @@ Current runtime/deployment state in this repository:
 
 - API logic exists in `apps/api` and is tested via Lambda event harness.
 - CDK deploys platform resources plus API Gateway routes for `/health` and `/v1/*`.
-- LINE adapters are currently stubbed by default (`StubLinePlatformClient`, `StubLineAuthClient`).
+- LINE integration now supports both `stub` and `real` modes (runtime switch via env).
 
 You can deploy and operate a baseline environment now, and then harden to full LINE production mode by following the "Production LINE Integration" section.
 
@@ -116,6 +116,9 @@ pnpm --filter @one-team/api test
 |---|---|---|---|
 | `AWS_REGION` | no | `ap-northeast-1` | AWS region for secret store client |
 | `USE_AWS_SECRETS_MANAGER` | no | `false` | Use AWS Secrets Manager for LINE credentials |
+| `LINE_INTEGRATION_MODE` | no | `stub` | `stub` for local/CI, `real` for live LINE APIs |
+| `LINE_API_BASE_URL` | no | `https://api.line.me` | LINE API base URL override |
+| `LINE_WEBHOOK_VERIFY_TOKEN_PREFIX` | no | `line-verify-` | Backward-compatible webhook verify token prefix |
 | `LINE_SECRET_PREFIX` | no | `one-team/dev/tenants` | Secret namespace prefix |
 | `PUBLIC_API_BASE_URL` | no | `https://api.example.com` | Used for webhook URL generation |
 | `INVITE_BASE_URL` | no | `https://app.example.com/invite` | Invitation link base URL |
@@ -127,7 +130,7 @@ For production, set all security-sensitive values explicitly and rotate them reg
 
 ## 4. LINE Setup Modes
 
-### 4.1 Default mode in this repository (Stub)
+### 4.1 Stub mode (default)
 
 By default this repo uses stubbed LINE clients:
 
@@ -142,19 +145,24 @@ Stub input rules:
 - Webhook verification token must start with `line-verify-`
 - Certain synthetic IDs intentionally fail to test retry/error paths
 
-### 4.2 Production LINE integration (required before external launch)
+### 4.2 Real LINE integration mode
 
-Before real go-live, replace stubs with real LINE API adapters:
+Enable real LINE APIs by setting:
 
-1. Implement `LineAuthClient` to verify real LINE ID tokens.
-2. Implement `LinePlatformClient` to call real LINE endpoints:
+```bash
+LINE_INTEGRATION_MODE=real
+USE_AWS_SECRETS_MANAGER=true
+```
+
+Real mode behavior:
+
+1. `LineAuthClient` validates LINE ID token via LINE verify endpoint.
+2. `LinePlatformClient` calls real LINE APIs to:
    - validate channel credentials
-   - create/update LIFF app and rich menu
-   - link/unlink rich menu for a LINE user
-   - verify webhook signature/token
-3. Wire real implementations in `apps/api/src/lambda.ts` composition.
-4. Extend webhook callback handling for production event processing and retry semantics.
-5. Keep secrets in AWS Secrets Manager (`USE_AWS_SECRETS_MANAGER=true`).
+   - set webhook endpoint
+   - create rich menu (if not existing)
+   - link/unlink rich menu per LINE user
+3. Webhook callback signature validation remains enforced.
 
 ## 5. AWS Deployment (dev/staging/prod)
 
@@ -417,10 +425,10 @@ openspec archive <name>
 
 For full external production launch, complete these in your fork:
 
-1. Replace all LINE stubs with real API adapters.
-2. Expand webhook event handling beyond signature validation (idempotency, retries, business handlers).
-3. Tighten IAM permissions from broad development defaults to least-privilege roles.
-4. Add stage-specific secret rotation policy and alarms integration with your on-call channel.
+1. Expand webhook event handling beyond signature validation (idempotency, retries, business handlers).
+2. Tighten IAM permissions from broad development defaults to least-privilege roles.
+3. Add stage-specific secret rotation policy and alarms integration with your on-call channel.
+4. Add production-ready rich menu assets and LIFF endpoint lifecycle automation.
 
 ## License
 

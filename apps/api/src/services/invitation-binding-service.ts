@@ -293,9 +293,11 @@ export class InvitationBindingService {
   }
 
   async startBinding(input: StartBindingInput): Promise<StartBindingOutput> {
-    const lineIdentity = await this.lineAuthClient.validateIdToken(input.lineIdToken);
-
     const invitation = await this.getAndValidateInvitation(input.invitationToken);
+    const lineIdentity = await this.lineAuthClient.validateIdToken({
+      tenantId: invitation.tenantId,
+      idToken: input.lineIdToken
+    });
 
     const existingLineBinding = await this.employeeBindingRepository.findActiveByLineUserId(
       invitation.tenantId,
@@ -397,7 +399,13 @@ export class InvitationBindingService {
     }
 
     try {
-      await this.linePlatformClient.linkRichMenu(session.lineUserId);
+      const tenant = await this.tenantRepository.findById(session.tenantId);
+      const richMenuId = tenant?.line.resources.richMenuId ?? `richmenu_${session.tenantId}`;
+      await this.linePlatformClient.linkRichMenu({
+        tenantId: session.tenantId,
+        lineUserId: session.lineUserId,
+        richMenuId
+      });
     } catch (error) {
       throw new ValidationError(
         `Rich menu linking failed: ${error instanceof Error ? error.message : 'Unknown error'}`

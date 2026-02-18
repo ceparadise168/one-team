@@ -2,10 +2,7 @@
 
 ## Purpose
 TBD - Synced from change mvp-line-identity-digital-id-killswitch.
-
 ## Requirements
-
-
 ### Requirement: HR offboarding action MUST transition employee to revoked state immediately
 The system SHALL provide an admin offboarding action that transitions employee status to OFFBOARDED and prevents new privileged employee interactions.
 
@@ -29,11 +26,15 @@ The system SHALL attempt to unlink employee Rich Menu from LINE and SHALL retry 
 - **THEN** the system schedules retry attempts with backoff and records retry activity
 
 ### Requirement: Offboarding MUST revoke active authentication sessions
-The system SHALL revoke all active refresh sessions and invalidate active access token identifiers (jti) for the offboarded employee.
+The system SHALL revoke all active refresh sessions and MUST invalidate all tracked active access token identifiers (jti) for the offboarded employee at offboarding time.
 
 #### Scenario: Active session use is rejected after offboarding
 - **WHEN** an offboarded employee attempts to use a session or token issued before offboarding
 - **THEN** the system rejects access with revoked-session outcome
+
+#### Scenario: Active jti identifiers are revoked during offboarding
+- **WHEN** offboarding processes an employee with active unexpired access tokens
+- **THEN** the system writes those jti identifiers to revocation storage so subsequent token validation is rejected as revoked
 
 ### Requirement: Offboarding events MUST produce immutable audit records
 The system SHALL persist append-only audit events containing actor identity, target employee, action, timestamp, and execution outcome.
@@ -45,3 +46,4 @@ The system SHALL persist append-only audit events containing actor identity, tar
 #### Scenario: Failed unlink emits audit event
 - **WHEN** Rich Menu unlink fails after retries
 - **THEN** the system stores an audit event with action `RICH_MENU_UNLINK` and outcome `FAILED`
+

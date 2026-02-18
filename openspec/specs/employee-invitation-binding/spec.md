@@ -2,10 +2,7 @@
 
 ## Purpose
 TBD - Synced from change mvp-line-identity-digital-id-killswitch.
-
 ## Requirements
-
-
 ### Requirement: Invitation tokens MUST enforce expiration and usage limits
 The system SHALL issue invitation tokens with tenant scope, expiration time (TTL), and usage limit. The system MUST reject tokens that are expired, revoked, or over usage limit.
 
@@ -18,22 +15,30 @@ The system SHALL issue invitation tokens with tenant scope, expiration time (TTL
 - **THEN** the system blocks binding flow and returns an invitation-invalid result
 
 ### Requirement: Batch invitation email sending MUST be supported
-The system SHALL allow admins to upload invitation recipients in batch and SHALL dispatch invitation emails asynchronously with per-recipient delivery status.
+The system SHALL allow admins to upload invitation recipients in batch and SHALL dispatch invitation emails asynchronously with per-recipient delivery status. Valid recipients MUST be persisted with `QUEUED` status before dispatch and transitioned to `SENT` or `FAILED` by dispatch execution.
 
 #### Scenario: Batch invitation send succeeds
 - **WHEN** an admin uploads a valid recipient batch
 - **THEN** the system queues email jobs and records invitation delivery status per recipient
+
+#### Scenario: Queued recipients are dispatched
+- **WHEN** dispatch execution runs for a queued batch job
+- **THEN** each queued recipient transitions from `QUEUED` to `SENT` or `FAILED` with reason metadata when failed
 
 #### Scenario: Invalid recipients are isolated
 - **WHEN** a batch contains invalid recipient entries
 - **THEN** the system marks only invalid entries as failed and continues processing valid recipients
 
 ### Requirement: Binding MUST require LINE authentication, employee ID, and one-time binding code
-The system SHALL require successful LINE login plus employee-provided employee ID and one-time binding code before completing account binding.
+The system SHALL require successful LINE login plus employee-provided employee ID and one-time binding code before completing account binding. The system MUST link employee Rich Menu during successful binding completion.
 
 #### Scenario: Binding succeeds with valid factors
 - **WHEN** an employee completes LINE login and submits valid employee ID and matching one-time binding code
-- **THEN** the system creates the binding, issues authenticated session credentials, and links employee Rich Menu
+- **THEN** the system creates the binding, links employee Rich Menu, and issues authenticated session credentials
+
+#### Scenario: Rich Menu link failure blocks completion
+- **WHEN** the binding factors are valid but Rich Menu linking fails
+- **THEN** the system returns binding failure and does not issue authenticated session credentials
 
 #### Scenario: Invalid one-time code triggers protection
 - **WHEN** an employee repeatedly submits invalid one-time binding codes
@@ -49,3 +54,4 @@ The system SHALL prevent one LINE user from binding to multiple employee identit
 #### Scenario: Existing employee binding is blocked from duplicate claim
 - **WHEN** an employee identity already bound to an active LINE user is claimed by another LINE account
 - **THEN** the system rejects the request as duplicate employee binding
+

@@ -60,6 +60,9 @@ corepack prepare pnpm@9.15.4 --activate
 
 pnpm install
 pnpm check
+
+cp .env.example .env
+# edit .env values for your environment
 ```
 
 `pnpm check` runs:
@@ -230,6 +233,17 @@ curl -sS "<ApiUrl>/health"
 ```
 
 ### 5.6 End-to-end smoke test against deployed API (stub LINE mode)
+
+One-command option:
+
+```bash
+cp .env.example .env
+# edit API_URL and any credentials/tokens in .env
+
+./scripts/smoke-test.sh
+```
+
+Manual step-by-step option:
 
 Set your API URL and any admin bearer token:
 

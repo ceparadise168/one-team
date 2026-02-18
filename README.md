@@ -170,6 +170,7 @@ Real mode behavior:
    - validate channel credentials
    - set webhook endpoint
    - create rich menu (if not existing)
+   - upload a default rich menu image during provisioning
    - link/unlink rich menu per LINE user
 3. Webhook callback signature validation remains enforced.
 
@@ -263,6 +264,10 @@ cp .env.example .env
 
 ./scripts/smoke-test.sh
 ```
+
+If Messaging API and LINE Login use separate channels, set both pairs in `.env`:
+- `CHANNEL_ID` / `CHANNEL_SECRET` (Messaging API)
+- `LOGIN_CHANNEL_ID` / `LOGIN_CHANNEL_SECRET` (LINE Login)
 
 Manual step-by-step option:
 

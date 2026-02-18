@@ -1,5 +1,6 @@
 import { LineCredentialStore } from '../security/line-credential-store.js';
 import { LineResources } from '../domain/tenant.js';
+import { deflateSync } from 'node:zlib';
 
 export interface ProvisionLineResourcesInput {
   tenantId: string;
@@ -59,12 +60,14 @@ export class StubLinePlatformClient implements LinePlatformClient {
 
 interface RealLinePlatformClientOptions {
   apiBaseUrl?: string;
+  apiDataBaseUrl?: string;
   fetchFn?: typeof fetch;
   webhookVerifyTokenPrefix?: string;
 }
 
 export class RealLinePlatformClient implements LinePlatformClient {
   private readonly apiBaseUrl: string;
+  private readonly apiDataBaseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly webhookVerifyTokenPrefix: string;
 
@@ -73,6 +76,7 @@ export class RealLinePlatformClient implements LinePlatformClient {
     options: RealLinePlatformClientOptions = {}
   ) {
     this.apiBaseUrl = (options.apiBaseUrl ?? 'https://api.line.me').replace(/\/$/, '');
+    this.apiDataBaseUrl = (options.apiDataBaseUrl ?? 'https://api-data.line.me').replace(/\/$/, '');
     this.fetchFn = options.fetchFn ?? globalThis.fetch;
     this.webhookVerifyTokenPrefix = options.webhookVerifyTokenPrefix ?? 'line-verify-';
   }
@@ -114,6 +118,11 @@ export class RealLinePlatformClient implements LinePlatformClient {
       }
       richMenuId = parsed.richMenuId.trim();
     }
+
+    await this.uploadRichMenuImage({
+      accessToken,
+      richMenuId
+    });
 
     return {
       ...input.existingResources,
@@ -229,6 +238,27 @@ export class RealLinePlatformClient implements LinePlatformClient {
     return response.json();
   }
 
+  private async uploadRichMenuImage(input: { accessToken: string; richMenuId: string }): Promise<void> {
+    const endpoint = `${this.apiDataBaseUrl}/v2/bot/richmenu/${encodeURIComponent(input.richMenuId)}/content`;
+    const imageBytes = createDefaultRichMenuImagePng();
+    const imagePayload = new Uint8Array(imageBytes.byteLength);
+    imagePayload.set(imageBytes);
+
+    const response = await this.fetchFn(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'image/png'
+      },
+      body: imagePayload
+    });
+
+    if (!response.ok) {
+      const detail = await readResponseText(response);
+      throw new Error(`LINE API upload rich menu image failed (HTTP ${response.status}): ${detail}`);
+    }
+  }
+
   private createDefaultRichMenuRequest(tenantId: string): {
     size: {
       width: number;
@@ -279,4 +309,102 @@ export class RealLinePlatformClient implements LinePlatformClient {
 async function readResponseText(response: Response): Promise<string> {
   const text = await response.text();
   return text.trim() || 'No response body';
+}
+
+let defaultRichMenuImagePngCache: Uint8Array | null = null;
+
+function createDefaultRichMenuImagePng(): Uint8Array {
+  if (defaultRichMenuImagePngCache) {
+    return defaultRichMenuImagePngCache;
+  }
+
+  defaultRichMenuImagePngCache = createSolidColorPng({
+    width: 2500,
+    height: 843,
+    red: 245,
+    green: 247,
+    blue: 250,
+    alpha: 255
+  });
+
+  return defaultRichMenuImagePngCache;
+}
+
+function createSolidColorPng(input: {
+  width: number;
+  height: number;
+  red: number;
+  green: number;
+  blue: number;
+  alpha: number;
+}): Uint8Array {
+  const bytesPerPixel = 4;
+  const rowByteLength = 1 + input.width * bytesPerPixel;
+  const rawImage = Buffer.alloc(rowByteLength * input.height);
+
+  for (let row = 0; row < input.height; row += 1) {
+    const rowOffset = row * rowByteLength;
+    rawImage[rowOffset] = 0; // PNG filter type 0 (None)
+
+    for (let col = 0; col < input.width; col += 1) {
+      const pixelOffset = rowOffset + 1 + col * bytesPerPixel;
+      rawImage[pixelOffset] = input.red;
+      rawImage[pixelOffset + 1] = input.green;
+      rawImage[pixelOffset + 2] = input.blue;
+      rawImage[pixelOffset + 3] = input.alpha;
+    }
+  }
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(input.width, 0);
+  ihdrData.writeUInt32BE(input.height, 4);
+  ihdrData[8] = 8; // bit depth
+  ihdrData[9] = 6; // color type RGBA
+  ihdrData[10] = 0; // compression method
+  ihdrData[11] = 0; // filter method
+  ihdrData[12] = 0; // interlace method
+
+  const compressedData = deflateSync(rawImage, {
+    level: 9
+  });
+
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdrChunk = createPngChunk('IHDR', ihdrData);
+  const idatChunk = createPngChunk('IDAT', compressedData);
+  const iendChunk = createPngChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
+}
+
+function createPngChunk(type: string, data: Uint8Array): Buffer {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const dataBytes = Buffer.from(data);
+
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(dataBytes.length, 0);
+
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(calculateCrc32(Buffer.concat([typeBytes, dataBytes])), 0);
+
+  return Buffer.concat([length, typeBytes, dataBytes, crc]);
+}
+
+const crc32LookupTable = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let crc = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 1) === 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+    table[i] = crc >>> 0;
+  }
+  return table;
+})();
+
+function calculateCrc32(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc = crc32LookupTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }

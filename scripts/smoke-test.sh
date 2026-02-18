@@ -33,8 +33,10 @@ require_env API_URL
 API_URL="${API_URL%/}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-admin-token}"
 SCANNER_API_KEY="${SCANNER_API_KEY:-dev-scanner-key}"
-CHANNEL_ID="${CHANNEL_ID:-1234567890}"
-CHANNEL_SECRET="${CHANNEL_SECRET:-1234567890abcdef}"
+CHANNEL_ID="${CHANNEL_ID:-${MESSAGING_CHANNEL_ID:-1234567890}}"
+CHANNEL_SECRET="${CHANNEL_SECRET:-${MESSAGING_CHANNEL_SECRET:-1234567890abcdef}}"
+LOGIN_CHANNEL_ID="${LOGIN_CHANNEL_ID:-${LINE_LOGIN_CHANNEL_ID:-$CHANNEL_ID}}"
+LOGIN_CHANNEL_SECRET="${LOGIN_CHANNEL_SECRET:-${LINE_LOGIN_CHANNEL_SECRET:-$CHANNEL_SECRET}}"
 WEBHOOK_VERIFY_TOKEN="${WEBHOOK_VERIFY_TOKEN:-line-verify-1234567890}"
 LINE_ID_TOKEN="${LINE_ID_TOKEN:-line-id:U1001}"
 TENANT_NAME="${TENANT_NAME:-ACME}"
@@ -71,7 +73,12 @@ echo "  tenantId=$TENANT_ID"
 
 echo "[2/8] Connecting LINE channel..."
 api_post_admin "/v1/admin/tenants/$TENANT_ID/line/connect" \
-  "{\"channelId\":\"$CHANNEL_ID\",\"channelSecret\":\"$CHANNEL_SECRET\"}" >/dev/null
+  "{
+    \"channelId\":\"$CHANNEL_ID\",
+    \"channelSecret\":\"$CHANNEL_SECRET\",
+    \"loginChannelId\":\"$LOGIN_CHANNEL_ID\",
+    \"loginChannelSecret\":\"$LOGIN_CHANNEL_SECRET\"
+  }" >/dev/null
 
 echo "[3/8] Provisioning LINE resources..."
 api_post_admin "/v1/admin/tenants/$TENANT_ID/line/provision" '{}' >/dev/null

@@ -8,5 +8,12 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"No tests for api yet\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.845.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152"
   }
 }

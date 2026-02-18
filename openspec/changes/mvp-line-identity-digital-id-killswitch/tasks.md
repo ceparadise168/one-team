@@ -12,9 +12,9 @@
 
 ## 3. Tenant setup wizard and LINE integration
 
-- [ ] 3.1 Implement tenant onboarding APIs for LINE credential submission and secure secret persistence
-- [ ] 3.2 Implement idempotent LINE provisioning flow for LIFF, Rich Menu, and webhook metadata
-- [ ] 3.3 Build Admin Setup Wizard UI with connection, provision, and webhook verification states
+- [x] 3.1 Implement tenant onboarding APIs for LINE credential submission and secure secret persistence
+- [x] 3.2 Implement idempotent LINE provisioning flow for LIFF, Rich Menu, and webhook metadata
+- [x] 3.3 Build Admin Setup Wizard UI with connection, provision, and webhook verification states
 
 ## 4. Invitation and binding lifecycle
 

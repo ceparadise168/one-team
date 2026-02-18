@@ -5,3 +5,6 @@
 /.gemini/
 /.kilocode/
 /.opencode/
+node_modules/
+dist/
+cdk.out/

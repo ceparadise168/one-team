@@ -1,0 +1,20 @@
+{
+  "name": "@one-team/infra-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"No tests for infra-cdk yet\"",
+    "cdk:synth": "pnpm build && cdk synth -a \"node dist/app.js\""
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.221.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1030.0"
+  }
+}

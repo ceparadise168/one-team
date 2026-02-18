@@ -1,14 +1,14 @@
 ## 1. Repository and baseline setup
 
-- [ ] 1.1 Initialize monorepo structure for `apps/admin-web`, `apps/liff-web`, `apps/api`, `packages/shared-types`, and `infra/cdk`
-- [ ] 1.2 Configure TypeScript, linting, formatting, and workspace scripts for build/test/check
-- [ ] 1.3 Add CI pipeline with GitHub Actions OIDC deployment role assumption for AWS
+- [x] 1.1 Initialize monorepo structure for `apps/admin-web`, `apps/liff-web`, `apps/api`, `packages/shared-types`, and `infra/cdk`
+- [x] 1.2 Configure TypeScript, linting, formatting, and workspace scripts for build/test/check
+- [x] 1.3 Add CI pipeline with GitHub Actions OIDC deployment role assumption for AWS
 
 ## 2. Infrastructure and environment foundations
 
-- [ ] 2.1 Define CDK stacks for API Gateway, Lambda, DynamoDB tables, SQS queues, SES integration, and Secrets Manager
-- [ ] 2.2 Create environment configuration for `dev`, `staging`, and `prod` with region `ap-northeast-1`
-- [ ] 2.3 Add observability primitives (CloudWatch log groups, metrics, alarms) and WAF/rate-limit defaults
+- [x] 2.1 Define CDK stacks for API Gateway, Lambda, DynamoDB tables, SQS queues, SES integration, and Secrets Manager
+- [x] 2.2 Create environment configuration for `dev`, `staging`, and `prod` with region `ap-northeast-1`
+- [x] 2.3 Add observability primitives (CloudWatch log groups, metrics, alarms) and WAF/rate-limit defaults
 
 ## 3. Tenant setup wizard and LINE integration
 

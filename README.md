@@ -274,6 +274,17 @@ For real LINE mode, defaults like `1234567890` and `line-id:U1001` will fail. Se
 - `LOGIN_CHANNEL_ID`, `LOGIN_CHANNEL_SECRET`
 - `LINE_ID_TOKEN` (issued by LINE Login channel)
 
+Quick helper to fetch `LINE_ID_TOKEN`:
+
+```bash
+# .env must include:
+# LOGIN_CHANNEL_ID, LOGIN_CHANNEL_SECRET, LINE_LOGIN_REDIRECT_URI
+
+./scripts/get-line-id-token.sh --open --write-env
+```
+
+The script prints an authorization URL, asks you to paste callback URL (or code), exchanges token, verifies `id_token`, and writes `LINE_ID_TOKEN` into `.env`.
+
 Manual step-by-step option:
 
 Set your API URL and any admin bearer token:

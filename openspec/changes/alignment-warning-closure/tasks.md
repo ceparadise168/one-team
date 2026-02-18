@@ -15,4 +15,4 @@
 
 - [x] 3.1 Update runtime architecture decision docs to reflect Node.js Lambda modular service implementation (not NestJS)
 - [x] 3.2 Update and add unit/integration/E2E tests for queued invitation dispatch, Rich Menu link on bind, and jti revocation on offboarding
-- [ ] 3.3 Run lint, typecheck, test, and build to verify no regressions
+- [x] 3.3 Run lint, typecheck, test, and build to verify no regressions

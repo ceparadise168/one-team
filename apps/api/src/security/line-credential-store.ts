@@ -1,6 +1,7 @@
 import {
   CreateSecretCommand,
   DescribeSecretCommand,
+  GetSecretValueCommand,
   PutSecretValueCommand,
   ResourceExistsException,
   SecretsManagerClient
@@ -13,6 +14,7 @@ export interface LineCredentials {
 
 export interface LineCredentialStore {
   upsertTenantCredentials(tenantId: string, credentials: LineCredentials): Promise<{ secretArn: string }>;
+  getTenantCredentials(tenantId: string): Promise<LineCredentials | null>;
 }
 
 export class InMemoryLineCredentialStore implements LineCredentialStore {
@@ -27,6 +29,16 @@ export class InMemoryLineCredentialStore implements LineCredentialStore {
     return {
       secretArn: `in-memory://${tenantId}/line`
     };
+  }
+
+  async getTenantCredentials(tenantId: string): Promise<LineCredentials | null> {
+    const raw = this.values.get(tenantId);
+
+    if (!raw) {
+      return null;
+    }
+
+    return parseLineCredentials(raw);
   }
 }
 
@@ -78,4 +90,37 @@ export class AwsSecretsManagerLineCredentialStore implements LineCredentialStore
       throw error;
     }
   }
+
+  async getTenantCredentials(tenantId: string): Promise<LineCredentials | null> {
+    const secretId = `${this.secretPrefix}/${tenantId}/line-credentials`;
+
+    try {
+      const value = await this.client.send(new GetSecretValueCommand({ SecretId: secretId }));
+
+      if (!value.SecretString) {
+        return null;
+      }
+
+      return parseLineCredentials(value.SecretString);
+    } catch (error) {
+      if ((error as { name?: string }).name === 'ResourceNotFoundException') {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+}
+
+function parseLineCredentials(raw: string): LineCredentials {
+  const parsed = JSON.parse(raw) as Partial<LineCredentials>;
+
+  if (typeof parsed.channelId !== 'string' || typeof parsed.channelSecret !== 'string') {
+    throw new Error('LINE credentials secret is malformed');
+  }
+
+  return {
+    channelId: parsed.channelId,
+    channelSecret: parsed.channelSecret
+  };
 }

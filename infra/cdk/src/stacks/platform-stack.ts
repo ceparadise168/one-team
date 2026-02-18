@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import {
   CfnOutput,
   Duration,
@@ -7,7 +8,9 @@ import {
   aws_apigateway as apigateway,
   aws_cloudwatch as cloudwatch,
   aws_dynamodb as dynamodb,
+  aws_iam as iam,
   aws_lambda as lambda,
+  aws_lambda_nodejs as lambdaNodejs,
   aws_logs as logs,
   aws_ses as ses,
   aws_secretsmanager as secretsmanager,
@@ -26,6 +29,7 @@ export class PlatformStack extends Stack {
     super(scope, id, props);
 
     const prefix = `one-team-${props.stage}`;
+    const lineSecretPrefix = `${prefix}/tenants`;
 
     const apiAccessLogs = new logs.LogGroup(this, 'ApiAccessLogs', {
       logGroupName: `/aws/apigateway/${prefix}`,
@@ -56,7 +60,39 @@ export class PlatformStack extends Stack {
       }
     });
 
+    const apiRuntimeHandler = new lambdaNodejs.NodejsFunction(this, 'ApiRuntimeHandler', {
+      functionName: `${prefix}-api-runtime`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: fileURLToPath(new URL('../../../../apps/api/src/lambda.ts', import.meta.url)),
+      handler: 'handler',
+      timeout: Duration.seconds(30),
+      memorySize: 512,
+      environment: {
+        USE_AWS_SECRETS_MANAGER: 'true',
+        LINE_SECRET_PREFIX: lineSecretPrefix,
+        PUBLIC_API_BASE_URL: api.url
+      }
+    });
+
+    apiRuntimeHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'secretsmanager:CreateSecret',
+          'secretsmanager:PutSecretValue',
+          'secretsmanager:DescribeSecret',
+          'secretsmanager:GetSecretValue'
+        ],
+        resources: ['*']
+      })
+    );
+
+    const apiRuntimeIntegration = new apigateway.LambdaIntegration(apiRuntimeHandler);
+
     api.root.addResource('health').addMethod('GET', new apigateway.LambdaIntegration(healthHandler));
+    api.root.addResource('v1').addProxy({
+      defaultIntegration: apiRuntimeIntegration,
+      anyMethod: true
+    });
 
     const invitationsDlq = new sqs.Queue(this, 'InvitationsDlq', {
       queueName: `${prefix}-invitations-dlq`,

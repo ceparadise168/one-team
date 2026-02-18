@@ -23,7 +23,7 @@ The application domain logic and tests are implemented, and the infrastructure b
 Current runtime/deployment state in this repository:
 
 - API logic exists in `apps/api` and is tested via Lambda event harness.
-- CDK currently deploys baseline platform resources and a health Lambda endpoint.
+- CDK deploys platform resources plus API Gateway routes for `/health` and `/v1/*`.
 - LINE adapters are currently stubbed by default (`StubLinePlatformClient`, `StubLineAuthClient`).
 
 You can deploy and operate a baseline environment now, and then harden to full LINE production mode by following the "Production LINE Integration" section.
@@ -153,7 +153,7 @@ Before real go-live, replace stubs with real LINE API adapters:
    - link/unlink rich menu for a LINE user
    - verify webhook signature/token
 3. Wire real implementations in `apps/api/src/lambda.ts` composition.
-4. Add signature validation for webhook callbacks.
+4. Extend webhook callback handling for production event processing and retry semantics.
 5. Keep secrets in AWS Secrets Manager (`USE_AWS_SECRETS_MANAGER=true`).
 
 ## 5. AWS Deployment (dev/staging/prod)
@@ -418,8 +418,8 @@ openspec archive <name>
 For full external production launch, complete these in your fork:
 
 1. Replace all LINE stubs with real API adapters.
-2. Implement verified LINE webhook handling.
-3. Deploy the full API runtime via infrastructure-as-code (not only baseline health endpoint).
+2. Expand webhook event handling beyond signature validation (idempotency, retries, business handlers).
+3. Tighten IAM permissions from broad development defaults to least-privilege roles.
 4. Add stage-specific secret rotation policy and alarms integration with your on-call channel.
 
 ## License

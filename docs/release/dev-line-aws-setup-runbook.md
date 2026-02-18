@@ -5,21 +5,21 @@ Last updated: 2026-02-18
 This runbook records the full setup flow for deploying and validating a development environment for `one-team`.
 It is written for step-by-step execution with both Manual and CLI options.
 
-## 0. Current Repository Constraints (Read First)
+## 0. Current Repository Status (Read First)
 
-These constraints are from current codebase state and affect webhook go-live:
+Current codebase behavior for dev setup:
 
 1. Webhook URL pattern is implemented in:
    - `apps/api/src/services/tenant-onboarding-service.ts`
    - Pattern: `{PUBLIC_API_BASE_URL}/v1/line/webhook/{tenantId}`
-2. CDK stack currently exposes only `GET /health` on API Gateway:
-   - `infra/cdk/src/stacks/platform-stack.ts`
-3. API runtime currently does not include `POST /v1/line/webhook/{tenantId}` route:
-   - `apps/api/src/lambda.ts`
+2. CDK stack deploys:
+   - `GET /health`
+   - `/v1/*` proxy to API runtime lambda
+3. API runtime includes `POST /v1/line/webhook/{tenantId}` with `x-line-signature` validation.
 
 Result:
-- You can complete AWS foundation and LINE channel setup now.
-- To receive real LINE webhook events, API webhook route + signature validation + API runtime deployment wiring must be added.
+- You can complete full dev bring-up from AWS deploy through LINE webhook verification.
+- Remaining production work is mostly replacing LINE stubs and adding richer webhook event handling.
 
 ## 1. Accounts and Access Checklist
 
@@ -174,7 +174,7 @@ Note:
 
 Important:
 - This step requires API runtime routes under `/v1/admin/...`.
-- If only baseline infra (`/health`) is deployed, this step will return 404.
+- Current stack wiring includes these routes.
 
 ### CLI
 ```bash
@@ -236,19 +236,19 @@ Expected:
 - Endpoint query returns the configured URL.
 - Test call reports success only if webhook endpoint is reachable and correctly implemented.
 
-## 11. Runtime Gaps to Close Before Real Webhook Validation
+## 11. Remaining Gaps Before External Production Launch
 
-To complete real LINE event flow, implement all items:
+Current dev stack already has webhook signature verification and API Gateway wiring.
 
-1. Add API route:
-   - `POST /v1/line/webhook/{tenantId}`
-2. Verify `x-line-signature` using channel secret (HMAC-SHA256).
-3. Deploy real `apps/api` lambda runtime behind API Gateway (not only health lambda).
-4. Log webhook event IDs and processing result for traceability.
+For external launch readiness, still complete:
 
-After implementation:
+1. Replace `StubLineAuthClient` and `StubLinePlatformClient` with real LINE adapters.
+2. Expand webhook handler to process business events with idempotency and retries.
+3. Add structured webhook event logging and alerting integration.
+
+Validation after those steps:
 1. Send message from LINE app to OA.
-2. Tail Lambda logs and verify event handling.
+2. Tail Lambda logs and verify event handling path.
 
 ## 12. Security Baseline for Dev
 
@@ -263,9 +263,8 @@ After implementation:
 1. `cdk deploy` denied:
    - Check IAM permissions and `AWS_PROFILE`.
 2. `/v1/admin/...` returns 404:
-   - API runtime routes not deployed to API Gateway yet.
+   - Check stack update status and API stage deployment.
 3. LINE webhook verify fails:
-   - Wrong URL, endpoint unreachable, or missing webhook route/signature validation.
+   - Wrong URL, endpoint unreachable, invalid channel secret, or signature mismatch.
 4. `401` on admin APIs:
    - Missing/invalid `Authorization: Bearer <token>`.
-

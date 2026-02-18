@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { invokeLambda } from './testing/lambda-test-client.js';
 
 const adminHeaders = {
@@ -186,4 +187,136 @@ test('integration: bind + digital id + offboard pipeline', async () => {
 
   assert.equal(verifiedAfterOffboard.statusCode, 200);
   assert.equal((verifiedAfterOffboard.body as { valid: boolean }).valid, false);
+});
+
+test('integration: line webhook rejects request without signature header', async () => {
+  const suffix = `${Date.now()}-webhook-missing-signature`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  const connected = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/line/connect`,
+    headers: adminHeaders,
+    body: {
+      channelId: '1234567890',
+      channelSecret: '1234567890abcdef'
+    }
+  });
+  assert.equal(connected.statusCode, 200);
+
+  const webhook = await invokeLambda({
+    method: 'POST',
+    path: `/v1/line/webhook/${tenantId}`,
+    body: {
+      destination: 'line-destination',
+      events: []
+    }
+  });
+
+  assert.equal(webhook.statusCode, 401);
+  assert.equal(
+    (webhook.body as { error: string }).error,
+    'Missing LINE webhook signature header'
+  );
+});
+
+test('integration: line webhook rejects invalid signature', async () => {
+  const suffix = `${Date.now()}-webhook-invalid-signature`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  const connected = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/line/connect`,
+    headers: adminHeaders,
+    body: {
+      channelId: '1234567890',
+      channelSecret: '1234567890abcdef'
+    }
+  });
+  assert.equal(connected.statusCode, 200);
+
+  const webhook = await invokeLambda({
+    method: 'POST',
+    path: `/v1/line/webhook/${tenantId}`,
+    headers: {
+      'x-line-signature': 'invalid-signature'
+    },
+    body: {
+      destination: 'line-destination',
+      events: [{ type: 'message' }]
+    }
+  });
+
+  assert.equal(webhook.statusCode, 401);
+  assert.equal((webhook.body as { error: string }).error, 'Invalid LINE webhook signature');
+});
+
+test('integration: line webhook accepts valid signature and returns event count', async () => {
+  const suffix = `${Date.now()}-webhook-valid-signature`;
+  const channelSecret = '1234567890abcdef';
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  const connected = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/line/connect`,
+    headers: adminHeaders,
+    body: {
+      channelId: '1234567890',
+      channelSecret
+    }
+  });
+  assert.equal(connected.statusCode, 200);
+
+  const payload = {
+    destination: 'line-destination',
+    events: [{ type: 'message' }, { type: 'follow' }]
+  };
+  const rawBody = JSON.stringify(payload);
+  const signature = createHmac('sha256', channelSecret).update(rawBody, 'utf8').digest('base64');
+
+  const webhook = await invokeLambda({
+    method: 'POST',
+    path: `/v1/line/webhook/${tenantId}`,
+    headers: {
+      'x-line-signature': signature
+    },
+    body: payload
+  });
+
+  assert.equal(webhook.statusCode, 200);
+  assert.equal((webhook.body as { ok: boolean }).ok, true);
+  assert.equal((webhook.body as { receivedEvents: number }).receivedEvents, 2);
 });

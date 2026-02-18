@@ -1,4 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
   ConflictError,
@@ -50,6 +51,12 @@ const connectLineSchema = z.object({
 const verifyWebhookSchema = z.object({
   verificationToken: z.string().min(1)
 });
+
+const lineWebhookPayloadSchema = z
+  .object({
+    events: z.array(z.unknown()).default([])
+  })
+  .passthrough();
 
 const createInvitationSchema = z.object({
   ttlMinutes: z.number().int().min(1).max(1440).default(60),
@@ -182,6 +189,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     if (method === 'GET' && path === '/health') {
       return jsonResponse(200, { ok: true });
+    }
+
+    const lineWebhookMatch = path.match(/^\/v1\/line\/webhook\/([^/]+)$/);
+    if (method === 'POST' && lineWebhookMatch) {
+      return handleLineWebhookEvent(event, lineWebhookMatch[1]);
     }
 
     if (path.startsWith('/v1/admin/') && !isAdminAuthorized(event)) {
@@ -394,17 +406,95 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 }
 
 function parseBody(event: APIGatewayProxyEvent): unknown {
-  if (!event.body) {
+  const raw = readRawBody(event);
+
+  if (!raw) {
     return {};
   }
 
-  const raw = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf8') : event.body;
+  return parseRawJson(raw);
+}
+
+function parseRawJson(raw: string): unknown {
+  if (!raw) {
+    return {};
+  }
+
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    return {};
+  }
 
   try {
     return JSON.parse(raw);
   } catch {
     throw new ValidationError('Request body must be valid JSON');
   }
+}
+
+function readRawBody(event: APIGatewayProxyEvent): string {
+  if (!event.body) {
+    return '';
+  }
+
+  return event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf8') : event.body;
+}
+
+async function handleLineWebhookEvent(
+  event: APIGatewayProxyEvent,
+  tenantId: string
+): Promise<APIGatewayProxyResult> {
+  const signature = getHeaderCaseInsensitive(event.headers, 'x-line-signature');
+
+  if (!signature) {
+    return jsonResponse(401, { error: 'Missing LINE webhook signature header' });
+  }
+
+  const credentials = await lineCredentialStore.getTenantCredentials(tenantId);
+
+  if (!credentials) {
+    return jsonResponse(401, { error: 'Invalid LINE webhook signature' });
+  }
+
+  const rawBody = readRawBody(event);
+  const normalizedSignature = signature.trim();
+
+  if (!isLineWebhookSignatureValid(rawBody, normalizedSignature, credentials.channelSecret)) {
+    return jsonResponse(401, { error: 'Invalid LINE webhook signature' });
+  }
+
+  const payload = lineWebhookPayloadSchema.parse(parseRawJson(rawBody));
+
+  return jsonResponse(200, {
+    ok: true,
+    receivedEvents: payload.events.length
+  });
+}
+
+function isLineWebhookSignatureValid(rawBody: string, signature: string, channelSecret: string): boolean {
+  const expected = createHmac('sha256', channelSecret).update(rawBody, 'utf8').digest('base64');
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  const actualBytes = Buffer.from(signature, 'utf8');
+
+  if (expectedBytes.length !== actualBytes.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBytes, actualBytes);
+}
+
+function getHeaderCaseInsensitive(
+  headers: APIGatewayProxyEvent['headers'],
+  headerName: string
+): string | undefined {
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === headerName.toLowerCase()) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function isAdminAuthorized(event: APIGatewayProxyEvent): boolean {

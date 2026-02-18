@@ -56,14 +56,29 @@ test('e2e: hr setup to employee access revocation journey', async () => {
       recipients: [{ email: `staff+${suffix}@acme.test`, employeeId: `EMP-${suffix}` }]
     }
   });
+  const batchJobId = (batchInvite.body as { jobId: string }).jobId;
+
+  const dispatched = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/invites/batch-jobs/${batchJobId}/dispatch`,
+    headers: adminHeaders,
+    body: {}
+  });
+  assert.equal(dispatched.statusCode, 200);
 
   const recipient = (batchInvite.body as {
     recipients: Array<{
+      status: string;
       invitationToken: string;
       oneTimeBindingCode: string;
       employeeId: string;
     }>;
   }).recipients[0];
+  assert.equal(recipient.status, 'QUEUED');
+  assert.equal(
+    (dispatched.body as { recipients: Array<{ status: string }> }).recipients[0].status,
+    'SENT'
+  );
 
   const bindStart = await invokeLambda({
     method: 'POST',

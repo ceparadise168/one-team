@@ -87,14 +87,29 @@ test('integration: bind + digital id + offboard pipeline', async () => {
   });
 
   assert.equal(batch.statusCode, 202);
+  const batchJobId = (batch.body as { jobId: string }).jobId;
 
   const firstRecipient = (batch.body as {
     recipients: Array<{
+      status: string;
       invitationToken: string;
       oneTimeBindingCode: string;
       employeeId: string;
     }>;
   }).recipients[0];
+  assert.equal(firstRecipient.status, 'QUEUED');
+
+  const dispatched = await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/invites/batch-jobs/${batchJobId}/dispatch`,
+    headers: adminHeaders,
+    body: {}
+  });
+  assert.equal(dispatched.statusCode, 200);
+  assert.equal(
+    (dispatched.body as { recipients: Array<{ status: string }> }).recipients[0].status,
+    'SENT'
+  );
 
   const start = await invokeLambda({
     method: 'POST',

@@ -57,6 +57,7 @@ test('offboarding revokes sessions and records audit events', async () => {
     new InMemoryEmployeeEnrollmentRepository(),
     employeeBindingRepository,
     new StubLineAuthClient(),
+    new StubLinePlatformClient(),
     {
       inviteBaseUrl: 'https://app.test/invite',
       sessionTtlMinutes: 10,
@@ -131,6 +132,7 @@ test('offboarding revokes sessions and records audit events', async () => {
     () => authService.validateAccessToken(tokens.accessToken, tenant.tenantId),
     (error) => {
       assert.ok(error instanceof UnauthorizedError);
+      assert.equal(error.message, 'Access token is revoked');
       return true;
     }
   );

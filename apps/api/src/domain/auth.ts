@@ -1,3 +1,8 @@
+export interface ActiveJtiRecord {
+  jti: string;
+  expiresAtEpochSeconds: number;
+}
+
 export interface RefreshSessionRecord {
   sessionId: string;
   tenantId: string;
@@ -7,6 +12,7 @@ export interface RefreshSessionRecord {
   createdAt: string;
   expiresAt: string;
   status: 'ACTIVE' | 'REVOKED';
+  activeJtis: ActiveJtiRecord[];
   updatedAt: string;
 }
 

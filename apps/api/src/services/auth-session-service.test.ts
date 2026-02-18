@@ -127,3 +127,45 @@ test('revoked jti cannot be used again', async () => {
     }
   );
 });
+
+test('revoking refresh session also revokes tracked active access token jtis', async () => {
+  const now = new Date('2026-02-18T00:00:00.000Z');
+  const bindingRepository = new InMemoryEmployeeBindingRepository();
+  await bindingRepository.upsert({
+    tenantId: 'tenant_a',
+    employeeId: 'E004',
+    lineUserId: 'U004',
+    boundAt: now.toISOString(),
+    employmentStatus: 'ACTIVE'
+  });
+
+  const service = new AuthSessionService(
+    new InMemoryRefreshSessionRepository(),
+    new InMemoryRevokedJtiRepository(),
+    bindingRepository,
+    {
+      issuer: 'one-team-test',
+      accessTokenTtlSeconds: 600,
+      refreshSessionTtlSeconds: 7 * 24 * 60 * 60,
+      accessTokenSecret: 'test-secret',
+      now: () => now
+    }
+  );
+
+  const issued = await service.issueEmployeeSession({
+    tenantId: 'tenant_a',
+    employeeId: 'E004',
+    lineUserId: 'U004'
+  });
+
+  await service.revokeSessionByRefreshToken(issued.refreshToken);
+
+  await assert.rejects(
+    () => service.validateAccessToken(issued.accessToken, 'tenant_a'),
+    (error) => {
+      assert.ok(error instanceof UnauthorizedError);
+      assert.equal(error.message, 'Access token is revoked');
+      return true;
+    }
+  );
+});

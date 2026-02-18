@@ -69,6 +69,8 @@ const batchInviteSchema = z.object({
     .max(500)
 });
 
+const dispatchBatchInviteJobSchema = z.object({});
+
 const bindStartSchema = z.object({
   lineIdToken: z.string().min(1),
   invitationToken: z.string().min(1)
@@ -97,6 +99,7 @@ const retryOffboardingJobSchema = z.object({
 });
 
 const tenantRepository = new InMemoryTenantRepository();
+const linePlatformClient = new StubLinePlatformClient();
 
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
   ? new AwsSecretsManagerLineCredentialStore({
@@ -108,7 +111,7 @@ const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
 const onboardingService = new TenantOnboardingService(
   tenantRepository,
   lineCredentialStore,
-  new StubLinePlatformClient(),
+  linePlatformClient,
   {
     publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL ?? 'https://api.example.com',
     now: () => new Date()
@@ -128,6 +131,7 @@ const invitationBindingService = new InvitationBindingService(
   new InMemoryEmployeeEnrollmentRepository(),
   employeeBindingRepository,
   new StubLineAuthClient(),
+  linePlatformClient,
   {
     inviteBaseUrl: process.env.INVITE_BASE_URL ?? 'https://app.example.com/invite',
     sessionTtlMinutes: 10,
@@ -163,7 +167,7 @@ const offboardingService = new OffboardingService(
   offboardingJobRepository,
   auditEventRepository,
   authSessionService,
-  new StubLinePlatformClient(),
+  linePlatformClient,
   {
     now: () => new Date(),
     maxAttempts: 5,
@@ -243,6 +247,18 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         recipients: payload.recipients
       });
       return jsonResponse(202, job);
+    }
+
+    const dispatchBatchInviteMatch = path.match(
+      /^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-jobs\/([^/]+)\/dispatch$/
+    );
+    if (method === 'POST' && dispatchBatchInviteMatch) {
+      dispatchBatchInviteJobSchema.parse(parseBody(event));
+      const job = await invitationBindingService.dispatchBatchInviteJob({
+        tenantId: dispatchBatchInviteMatch[1],
+        jobId: dispatchBatchInviteMatch[2]
+      });
+      return jsonResponse(200, job);
     }
 
     if (method === 'POST' && path === '/v1/public/bind/start') {

@@ -11,6 +11,7 @@ export interface LinePlatformClient {
   validateChannelCredentials(channelId: string, channelSecret: string): Promise<void>;
   provisionResources(input: ProvisionLineResourcesInput): Promise<LineResources>;
   verifyWebhookToken(token: string): Promise<boolean>;
+  linkRichMenu(lineUserId: string): Promise<void>;
   unlinkRichMenu(lineUserId: string): Promise<void>;
 }
 
@@ -36,6 +37,12 @@ export class StubLinePlatformClient implements LinePlatformClient {
 
   async verifyWebhookToken(token: string): Promise<boolean> {
     return token.startsWith('line-verify-') && token.length > 16;
+  }
+
+  async linkRichMenu(lineUserId: string): Promise<void> {
+    if (lineUserId.startsWith('fail-link-')) {
+      throw new Error('LINE API transient failure while linking rich menu');
+    }
   }
 
   async unlinkRichMenu(lineUserId: string): Promise<void> {

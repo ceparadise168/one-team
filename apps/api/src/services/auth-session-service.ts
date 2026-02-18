@@ -62,6 +62,12 @@ export class AuthSessionService {
     const refreshToken = this.randomToken(32);
     const refreshTokenHash = this.hash(refreshToken);
     const sessionId = `session_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const accessTokenPayload = this.createAccessTokenPayload({
+      tenantId: input.tenantId,
+      lineUserId: input.lineUserId,
+      employeeId: input.employeeId,
+      sessionId
+    });
 
     const session: RefreshSessionRecord = {
       sessionId,
@@ -72,17 +78,18 @@ export class AuthSessionService {
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.options.refreshSessionTtlSeconds * 1000).toISOString(),
       status: 'ACTIVE',
+      activeJtis: [
+        {
+          jti: accessTokenPayload.jti,
+          expiresAtEpochSeconds: accessTokenPayload.exp
+        }
+      ],
       updatedAt: now.toISOString()
     };
 
     await this.refreshSessionRepository.create(session);
 
-    const accessToken = this.createAccessToken({
-      tenantId: input.tenantId,
-      lineUserId: input.lineUserId,
-      employeeId: input.employeeId,
-      sessionId
-    });
+    const accessToken = this.signAccessToken(accessTokenPayload);
 
     return {
       accessToken,
@@ -121,15 +128,16 @@ export class AuthSessionService {
 
     const rotatedRefreshToken = this.randomToken(32);
     session.refreshTokenHash = this.hash(rotatedRefreshToken);
-    session.updatedAt = now.toISOString();
-    await this.refreshSessionRepository.save(session);
-
-    const accessToken = this.createAccessToken({
+    const accessTokenPayload = this.createAccessTokenPayload({
       tenantId: session.tenantId,
       lineUserId: session.lineUserId,
       employeeId: session.employeeId,
       sessionId: session.sessionId
     });
+    this.trackActiveJti(session, accessTokenPayload);
+    session.updatedAt = now.toISOString();
+    await this.refreshSessionRepository.save(session);
+    const accessToken = this.signAccessToken(accessTokenPayload);
 
     return {
       accessToken,
@@ -162,6 +170,8 @@ export class AuthSessionService {
     if (!session || session.status !== 'ACTIVE') {
       throw new UnauthorizedError('Refresh session is invalid');
     }
+
+    session.activeJtis = this.pruneExpiredActiveJtis(session.activeJtis, nowEpochSeconds);
 
     if (new Date(session.expiresAt).getTime() <= this.options.now().getTime()) {
       throw new UnauthorizedError('Refresh session expired');
@@ -201,7 +211,9 @@ export class AuthSessionService {
       return;
     }
 
+    await this.revokeTrackedJtis(session);
     session.status = 'REVOKED';
+    session.activeJtis = [];
     session.updatedAt = this.options.now().toISOString();
     await this.refreshSessionRepository.save(session);
   }
@@ -211,7 +223,9 @@ export class AuthSessionService {
 
     await Promise.all(
       sessions.map(async (session) => {
+        await this.revokeTrackedJtis(session);
         session.status = 'REVOKED';
+        session.activeJtis = [];
         session.updatedAt = this.options.now().toISOString();
         await this.refreshSessionRepository.save(session);
       })
@@ -224,15 +238,15 @@ export class AuthSessionService {
     await this.revokedJtiRepository.revokeJti(payload.jti, payload.exp);
   }
 
-  private createAccessToken(input: {
+  private createAccessTokenPayload(input: {
     tenantId: string;
     lineUserId: string;
     employeeId: string;
     sessionId: string;
-  }): string {
+  }): AccessTokenPayload {
     const nowEpochSeconds = Math.floor(this.options.now().getTime() / 1000);
 
-    const payload: AccessTokenPayload = {
+    return {
       iss: this.options.issuer,
       typ: 'access',
       tenantId: input.tenantId,
@@ -243,8 +257,42 @@ export class AuthSessionService {
       iat: nowEpochSeconds,
       exp: nowEpochSeconds + this.options.accessTokenTtlSeconds
     };
+  }
 
+  private signAccessToken(payload: AccessTokenPayload): string {
     return createSignedAccessToken(payload, this.options.accessTokenSecret);
+  }
+
+  private trackActiveJti(session: RefreshSessionRecord, payload: AccessTokenPayload): void {
+    session.activeJtis = this.pruneExpiredActiveJtis(
+      session.activeJtis,
+      Math.floor(this.options.now().getTime() / 1000)
+    );
+
+    if (!session.activeJtis.some((item) => item.jti === payload.jti)) {
+      session.activeJtis.push({
+        jti: payload.jti,
+        expiresAtEpochSeconds: payload.exp
+      });
+    }
+  }
+
+  private pruneExpiredActiveJtis(
+    activeJtis: RefreshSessionRecord['activeJtis'],
+    nowEpochSeconds: number
+  ): RefreshSessionRecord['activeJtis'] {
+    return activeJtis.filter((entry) => entry.expiresAtEpochSeconds > nowEpochSeconds);
+  }
+
+  private async revokeTrackedJtis(session: RefreshSessionRecord): Promise<void> {
+    const nowEpochSeconds = Math.floor(this.options.now().getTime() / 1000);
+    const activeJtis = this.pruneExpiredActiveJtis(session.activeJtis, nowEpochSeconds);
+
+    await Promise.all(
+      activeJtis.map((entry) =>
+        this.revokedJtiRepository.revokeJti(entry.jti, entry.expiresAtEpochSeconds)
+      )
+    );
   }
 
   private randomToken(byteLength: number): string {

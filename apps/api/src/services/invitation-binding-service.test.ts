@@ -62,7 +62,13 @@ test('successful binding consumes invitation usage and returns auth payload', as
   });
 
   const recipient = batch.recipients[0];
-  assert.equal(recipient.status, 'SENT');
+  assert.equal(recipient.status, 'QUEUED');
+
+  const dispatched = await ctx.invitationBinding.dispatchBatchInviteJob({
+    tenantId: tenant.tenantId,
+    jobId: batch.jobId
+  });
+  assert.equal(dispatched.recipients[0].status, 'SENT');
 
   const start = await ctx.invitationBinding.startBinding({
     lineIdToken: 'line-id:U1001',
@@ -79,6 +85,37 @@ test('successful binding consumes invitation usage and returns auth payload', as
   assert.equal(completed.employeeId, 'E001');
   assert.equal(completed.lineUserId, 'U1001');
   assert.equal(completed.auth.expiresInSeconds, 600);
+});
+
+test('batch dispatch isolates failed recipients and continues valid ones', async () => {
+  const now = new Date('2026-02-18T00:00:00.000Z');
+  const ctx = createTestContext(now);
+
+  const tenant = await ctx.onboarding.createTenant({
+    tenantName: 'ACME',
+    adminEmail: 'hr@acme.test'
+  });
+
+  const batch = await ctx.invitationBinding.createBatchInvites({
+    tenantId: tenant.tenantId,
+    ttlMinutes: 30,
+    recipients: [
+      { email: 'ok@acme.test', employeeId: 'E010' },
+      { email: 'fail-dispatch@acme.test', employeeId: 'E011' }
+    ]
+  });
+
+  assert.equal(batch.recipients[0].status, 'QUEUED');
+  assert.equal(batch.recipients[1].status, 'QUEUED');
+
+  const dispatched = await ctx.invitationBinding.dispatchBatchInviteJob({
+    tenantId: tenant.tenantId,
+    jobId: batch.jobId
+  });
+
+  const byEmployee = new Map(dispatched.recipients.map((recipient) => [recipient.employeeId, recipient]));
+  assert.equal(byEmployee.get('E010')?.status, 'SENT');
+  assert.equal(byEmployee.get('E011')?.status, 'FAILED');
 });
 
 test('binding is locked for repeated invalid one-time codes', async () => {
@@ -186,16 +223,53 @@ test('duplicate employee binding is rejected', async () => {
   );
 });
 
+test('binding fails when rich menu link fails', async () => {
+  const now = new Date('2026-02-18T00:00:00.000Z');
+  const ctx = createTestContext(now);
+
+  const tenant = await ctx.onboarding.createTenant({
+    tenantName: 'ACME',
+    adminEmail: 'hr@acme.test'
+  });
+
+  const batch = await ctx.invitationBinding.createBatchInvites({
+    tenantId: tenant.tenantId,
+    ttlMinutes: 30,
+    recipients: [{ email: 'u9@acme.test', employeeId: 'E009' }]
+  });
+
+  const recipient = batch.recipients[0];
+  const start = await ctx.invitationBinding.startBinding({
+    lineIdToken: 'line-id:fail-link-U9009',
+    invitationToken: recipient.invitationToken as string
+  });
+
+  await assert.rejects(
+    () =>
+      ctx.invitationBinding.completeBinding({
+        bindSessionToken: start.bindSessionToken,
+        employeeId: 'E009',
+        bindingCode: recipient.oneTimeBindingCode as string
+      }),
+    (error) => {
+      assert.ok(error instanceof ValidationError);
+      assert.match(error.message, /Rich menu linking failed/);
+      return true;
+    }
+  );
+});
+
 function createTestContext(now: Date): {
   onboarding: TenantOnboardingService;
   invitationBinding: InvitationBindingService;
 } {
   const tenantRepository = new InMemoryTenantRepository();
+  const linePlatformClient = new StubLinePlatformClient();
 
   const onboarding = new TenantOnboardingService(
     tenantRepository,
     new InMemoryLineCredentialStore(),
-    new StubLinePlatformClient(),
+    linePlatformClient,
     {
       publicApiBaseUrl: 'https://api.test',
       now: () => now
@@ -210,6 +284,7 @@ function createTestContext(now: Date): {
     new InMemoryEmployeeEnrollmentRepository(),
     new InMemoryEmployeeBindingRepository(),
     new StubLineAuthClient(),
+    linePlatformClient,
     {
       inviteBaseUrl: 'https://app.test/invite',
       sessionTtlMinutes: 10,

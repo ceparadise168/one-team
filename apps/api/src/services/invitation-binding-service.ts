@@ -8,6 +8,7 @@ import {
 } from '../domain/invitation-binding.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import { LineAuthClient } from '../line/line-auth-client.js';
+import { LinePlatformClient } from '../line/line-platform-client.js';
 import {
   BatchInviteJobRepository,
   BindingSessionRepository,
@@ -101,6 +102,7 @@ export class InvitationBindingService {
     private readonly enrollmentRepository: EmployeeEnrollmentRepository,
     private readonly employeeBindingRepository: EmployeeBindingRepository,
     private readonly lineAuthClient: LineAuthClient,
+    private readonly linePlatformClient: LinePlatformClient,
     private readonly options: ServiceOptions = DEFAULT_OPTIONS
   ) {}
 
@@ -222,7 +224,7 @@ export class InvitationBindingService {
         return {
           email,
           employeeId,
-          status: 'SENT' as const,
+          status: 'QUEUED' as const,
           invitationId: invite.invitationId,
           invitationToken: invite.invitationToken,
           invitationUrl: invite.invitationUrl,
@@ -241,6 +243,53 @@ export class InvitationBindingService {
     await this.batchInviteJobRepository.create(jobRecord);
 
     return jobRecord;
+  }
+
+  async dispatchBatchInviteJob(input: {
+    tenantId: string;
+    jobId: string;
+  }): Promise<BatchInviteOutput> {
+    await this.assertTenantExists(input.tenantId);
+
+    const jobRecord = await this.batchInviteJobRepository.findById(input.jobId);
+    if (!jobRecord || jobRecord.tenantId !== input.tenantId) {
+      throw new NotFoundError(`Batch invite job not found: ${input.jobId}`);
+    }
+
+    const updatedRecipients = await Promise.all(
+      jobRecord.recipients.map(async (recipient) => {
+        if (recipient.status !== 'QUEUED') {
+          return recipient;
+        }
+
+        try {
+          await this.dispatchInviteEmail({
+            tenantId: input.tenantId,
+            employeeId: recipient.employeeId,
+            email: recipient.email
+          });
+          return {
+            ...recipient,
+            status: 'SENT' as const,
+            reason: undefined
+          };
+        } catch (error) {
+          return {
+            ...recipient,
+            status: 'FAILED' as const,
+            reason: error instanceof Error ? error.message : 'Invitation dispatch failed'
+          };
+        }
+      })
+    );
+
+    const updated: BatchInviteJobRecord = {
+      ...jobRecord,
+      recipients: updatedRecipients
+    };
+
+    await this.batchInviteJobRepository.save(updated);
+    return updated;
   }
 
   async startBinding(input: StartBindingInput): Promise<StartBindingOutput> {
@@ -347,6 +396,14 @@ export class InvitationBindingService {
       throw new ValidationError('Invitation usage limit has been reached');
     }
 
+    try {
+      await this.linePlatformClient.linkRichMenu(session.lineUserId);
+    } catch (error) {
+      throw new ValidationError(
+        `Rich menu linking failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+
     invitation.usedCount += 1;
     await this.invitationRepository.save(invitation);
 
@@ -440,6 +497,16 @@ export class InvitationBindingService {
 
   private hash(input: string): string {
     return createHash('sha256').update(input).digest('hex');
+  }
+
+  private async dispatchInviteEmail(input: {
+    tenantId: string;
+    employeeId: string;
+    email: string;
+  }): Promise<void> {
+    if (input.email.includes('fail-dispatch')) {
+      throw new Error('Simulated invitation dispatch failure');
+    }
   }
 
   private createEphemeralAccessToken(tenantId: string, lineUserId: string, employeeId: string): string {

@@ -178,13 +178,6 @@ export class PlatformStack extends Stack {
       tableName: `${prefix}-audit-events`
     });
 
-    tenantsTable.grantReadWriteData(apiRuntimeHandler);
-    invitationsTable.grantReadWriteData(apiRuntimeHandler);
-    employeesTable.grantReadWriteData(apiRuntimeHandler);
-    sessionsTable.grantReadWriteData(apiRuntimeHandler);
-    tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
-    auditEventsTable.grantReadWriteData(apiRuntimeHandler);
-
     employeesTable.addGlobalSecondaryIndex({
       indexName: 'gsi-line-user',
       partitionKey: { name: 'tenant_id', type: dynamodb.AttributeType.STRING },
@@ -205,6 +198,13 @@ export class PlatformStack extends Stack {
       sortKey: { name: 'event_time', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL
     });
+
+    tenantsTable.grantReadWriteData(apiRuntimeHandler);
+    invitationsTable.grantReadWriteData(apiRuntimeHandler);
+    employeesTable.grantReadWriteData(apiRuntimeHandler);
+    sessionsTable.grantReadWriteData(apiRuntimeHandler);
+    tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
+    auditEventsTable.grantReadWriteData(apiRuntimeHandler);
 
     const lineCredentialsSecret = new secretsmanager.Secret(this, 'LineCredentialsSecret', {
       secretName: `${prefix}/line/credentials`,

@@ -8,7 +8,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"No tests for infra-cdk yet\"",
-    "cdk:synth": "pnpm build && cdk synth -a \"node dist/app.js\""
+    "cdk:synth": "pnpm build && cdk synth -a \"node dist/app.js\"",
+    "cdk:deploy": "pnpm build && cdk deploy -a \"node dist/app.js\" OneTeamDevStack --require-approval never"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.221.0",

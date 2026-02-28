@@ -54,8 +54,7 @@ test('e2e: hr setup to employee self-register, approve, digital id, and offboard
     body: {
       tenantId,
       lineIdToken: `line-id:EMP-U-${suffix}`,
-      employeeId: `EMP-${suffix}`,
-      nickname: `Employee-${suffix}`
+      employeeId: `EMP-${suffix}`
     }
   });
 

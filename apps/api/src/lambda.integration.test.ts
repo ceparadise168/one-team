@@ -149,8 +149,7 @@ test('integration: self-register + approve + digital id + offboard pipeline', as
     body: {
       tenantId,
       lineIdToken: `line-id:U-${suffix}`,
-      employeeId: `E-${suffix}`,
-      nickname: `Employee-${suffix}`
+      employeeId: `E-${suffix}`
     }
   });
 
@@ -257,8 +256,7 @@ test('integration: access request approval enables delegated offboard permission
   const manager = await selfRegisterApproveAndLogin({
     tenantId,
     employeeId: `E-MGR-${suffix}`,
-    lineIdToken: `line-id:U-MGR-${suffix}`,
-    nickname: `Manager-${suffix}`
+    lineIdToken: `line-id:U-MGR-${suffix}`
   });
 
   // Manager requests access
@@ -292,8 +290,7 @@ test('integration: access request approval enables delegated offboard permission
   const worker = await selfRegisterApproveAndLogin({
     tenantId,
     employeeId: `E-WORK-${suffix}`,
-    lineIdToken: `line-id:U-WORK-${suffix}`,
-    nickname: `Worker-${suffix}`
+    lineIdToken: `line-id:U-WORK-${suffix}`
   });
 
   // Manager tries to offboard worker (should be forbidden — no canRemove)
@@ -488,8 +485,7 @@ test('integration: admin employees list with status filter', async () => {
     body: {
       tenantId,
       lineIdToken: `line-id:U-A-${suffix}`,
-      employeeId: `E-A-${suffix}`,
-      nickname: '員工A'
+      employeeId: `E-A-${suffix}`
     }
   });
 
@@ -499,8 +495,7 @@ test('integration: admin employees list with status filter', async () => {
     body: {
       tenantId,
       lineIdToken: `line-id:U-B-${suffix}`,
-      employeeId: `E-B-${suffix}`,
-      nickname: '員工B'
+      employeeId: `E-B-${suffix}`
     }
   });
 
@@ -538,7 +533,6 @@ async function selfRegisterApproveAndLogin(input: {
   tenantId: string;
   employeeId: string;
   lineIdToken: string;
-  nickname: string;
 }): Promise<{
   employeeId: string;
   accessToken: string;
@@ -549,8 +543,7 @@ async function selfRegisterApproveAndLogin(input: {
     body: {
       tenantId: input.tenantId,
       lineIdToken: input.lineIdToken,
-      employeeId: input.employeeId,
-      nickname: input.nickname
+      employeeId: input.employeeId
     }
   });
   assert.equal(registered.statusCode, 200);

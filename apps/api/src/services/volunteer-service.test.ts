@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { VolunteerService } from './volunteer-service.js';
 import { InMemoryVolunteerRepository } from '../repositories/volunteer-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
-import { ConflictError, ValidationError } from '../errors.js';
+import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 
 function createContext() {
   const volunteerRepo = new InMemoryVolunteerRepository();
@@ -11,7 +11,7 @@ function createContext() {
   const service = new VolunteerService(volunteerRepo, employeeRepo, {
     tenantId: 'default-tenant',
     signingSecret: 'test-secret-key-for-hmac-signing',
-    now: () => new Date('2026-04-01T10:00:00.000Z'),
+    now: () => new Date('2026-04-01T09:00:00.000Z'),
   });
   return { service, volunteerRepo, employeeRepo };
 }
@@ -158,5 +158,294 @@ describe('VolunteerService — Activity CRUD', () => {
         return true;
       }
     );
+  });
+});
+
+describe('VolunteerService — Registration', () => {
+  it('registers for an open activity', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: 10,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+
+    await service.register(activityId, 'E002');
+    const detail = await service.getActivityDetail(activityId);
+    assert.equal(detail!.registrationCount, 1);
+  });
+
+  it('rejects registration when capacity is full', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Small',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: 1,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+
+    await service.register(activityId, 'E002');
+    await assert.rejects(
+      () => service.register(activityId, 'E003'),
+      (error) => {
+        assert.ok(error instanceof ConflictError);
+        return true;
+      }
+    );
+  });
+
+  it('rejects duplicate registration', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+
+    await service.register(activityId, 'E002');
+    await assert.rejects(
+      () => service.register(activityId, 'E002'),
+      (error) => {
+        assert.ok(error instanceof ConflictError);
+        return true;
+      }
+    );
+  });
+
+  it('cancels registration', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+
+    await service.register(activityId, 'E002');
+    await service.cancelRegistration(activityId, 'E002');
+    const detail = await service.getActivityDetail(activityId);
+    assert.equal(detail!.registrationCount, 0);
+  });
+
+  it('lists my registrations', async () => {
+    const { service } = createContext();
+    await service.createActivity({
+      title: 'A',
+      description: '',
+      location: '',
+      activityDate: '2026-04-10',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+    const { activityId: id2 } = await service.createActivity({
+      title: 'B',
+      description: '',
+      location: '',
+      activityDate: '2026-04-20',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+
+    await service.register(id2, 'E002');
+    const mine = await service.myActivities('E002');
+    assert.equal(mine.length, 1);
+    assert.equal(mine[0].activityId, id2);
+  });
+});
+
+describe('VolunteerService — Check-in', () => {
+  it('organizer-scan: checks in a registered employee via digital ID payload', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+
+    await service.organizerScanCheckIn(activityId, 'E002', 'E001');
+
+    const checkIn = await service.getCheckInStatus(activityId, 'E002');
+    assert.ok(checkIn);
+    assert.equal(checkIn.mode, 'organizer-scan');
+    assert.equal(checkIn.checkedInBy, 'E001');
+  });
+
+  it('self-scan: checks in via activity QR payload', async () => {
+    const { service, volunteerRepo } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Lecture',
+      description: '',
+      location: '',
+      activityDate: '2026-04-01',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+
+    const activity = await volunteerRepo.findActivityById(activityId);
+    assert.ok(activity!.selfScanPayload);
+
+    await service.selfScanCheckIn(activityId, activity!.selfScanPayload!, 'E002');
+
+    const checkIn = await service.getCheckInStatus(activityId, 'E002');
+    assert.ok(checkIn);
+    assert.equal(checkIn.mode, 'self-scan');
+  });
+
+  it('rejects check-in for unregistered employee', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+
+    await assert.rejects(
+      () => service.organizerScanCheckIn(activityId, 'E999', 'E001'),
+      (error) => {
+        assert.ok(error instanceof ValidationError);
+        return true;
+      }
+    );
+  });
+
+  it('rejects duplicate check-in', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+    await service.organizerScanCheckIn(activityId, 'E002', 'E001');
+
+    await assert.rejects(
+      () => service.organizerScanCheckIn(activityId, 'E002', 'E001'),
+      (error) => {
+        assert.ok(error instanceof ConflictError);
+        return true;
+      }
+    );
+  });
+
+  it('rejects self-scan with invalid QR payload', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: '',
+      activityDate: '2026-04-01',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'self-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+
+    await assert.rejects(
+      () => service.selfScanCheckIn(activityId, 'invalid.payload', 'E002'),
+      (error) => {
+        assert.ok(error instanceof ValidationError);
+        return true;
+      }
+    );
+  });
+});
+
+describe('VolunteerService — Report', () => {
+  it('generates activity report with registrations and check-ins', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'Event',
+      description: '',
+      location: 'HQ',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+    await service.register(activityId, 'E003');
+    await service.organizerScanCheckIn(activityId, 'E002', 'E001');
+
+    const report = await service.getReport(activityId);
+    assert.equal(report.activity.title, 'Event');
+    assert.equal(report.registrations.length, 2);
+    assert.equal(report.checkIns.length, 1);
+  });
+
+  it('exports CSV with correct headers and data', async () => {
+    const { service } = createContext();
+    const { activityId } = await service.createActivity({
+      title: 'CSV Test',
+      description: '',
+      location: '',
+      activityDate: '2026-04-15',
+      startTime: '09:00',
+      endTime: '17:00',
+      capacity: null,
+      checkInMode: 'organizer-scan',
+      createdBy: 'E001',
+    });
+    await service.register(activityId, 'E002');
+    await service.organizerScanCheckIn(activityId, 'E002', 'E001');
+
+    const csv = await service.exportCsv(activityId);
+    assert.ok(csv.includes('employeeId'));
+    assert.ok(csv.includes('E002'));
+    assert.ok(csv.includes('checkedInAt'));
   });
 });

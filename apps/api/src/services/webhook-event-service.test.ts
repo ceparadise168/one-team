@@ -2,11 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { WebhookEventService } from './webhook-event-service.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
+import { SelfRegistrationService } from './self-registration-service.js';
 import { InMemoryWebhookEventRepository } from '../repositories/webhook-event-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { InMemoryAuditEventRepository } from '../repositories/offboarding-repository.js';
 import { InMemoryTenantRepository } from '../repositories/tenant-repository.js';
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
+import { StubLineAuthClient } from '../line/line-auth-client.js';
 import { LineWebhookEvent } from '../domain/webhook.js';
 import { createTenantRecord } from '../domain/tenant.js';
 
@@ -16,6 +18,7 @@ async function createService() {
   const auditEventRepo = new InMemoryAuditEventRepository();
   const tenantRepo = new InMemoryTenantRepository();
   const linePlatformClient = new StubLinePlatformClient();
+  const lineAuthClient = new StubLineAuthClient();
 
   const tenant = createTenantRecord({
     tenantId: 'tenant-1',
@@ -35,6 +38,14 @@ async function createService() {
     { now: () => new Date('2026-02-28T00:00:00.000Z') }
   );
 
+  const selfRegistrationService = new SelfRegistrationService(
+    lineAuthClient,
+    employeeBindingRepo,
+    tenantRepo,
+    linePlatformClient,
+    { now: () => new Date('2026-02-28T00:00:00.000Z') }
+  );
+
   const service = new WebhookEventService(
     webhookEventRepo,
     employeeBindingRepo,
@@ -42,10 +53,11 @@ async function createService() {
     linePlatformClient,
     accessGovernanceService,
     tenantRepo,
+    selfRegistrationService,
     { now: () => new Date('2026-02-28T00:00:00.000Z') }
   );
 
-  return { service, webhookEventRepo, employeeBindingRepo, auditEventRepo, linePlatformClient, tenantRepo };
+  return { service, webhookEventRepo, employeeBindingRepo, auditEventRepo, linePlatformClient, tenantRepo, selfRegistrationService };
 }
 
 describe('WebhookEventService', () => {
@@ -399,14 +411,8 @@ describe('WebhookEventService — follow + request_access', () => {
     assert.ok(reply);
   });
 
-  it('request_access postback sends LIFF registration link for new user', async () => {
-    const { service, linePlatformClient, tenantRepo } = await createService();
-
-    // Ensure tenant has liffId
-    const tenant = await tenantRepo.findById('tenant-1');
-    assert.ok(tenant);
-    tenant.line.resources.liffId = 'liff-abc123';
-    await tenantRepo.save(tenant);
+  it('request_access postback prompts user to enter employee ID', async () => {
+    const { service, linePlatformClient } = await createService();
 
     await service.processEvents('tenant-1', [{
       type: 'postback',
@@ -420,9 +426,7 @@ describe('WebhookEventService — follow + request_access', () => {
     const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-1');
     assert.ok(reply);
     const json = JSON.stringify(reply.messages);
-    assert.ok(json.includes('員工註冊'), 'Should show registration instruction');
-    assert.ok(json.includes('liff-abc123'), 'Should include LIFF ID in URL');
-    assert.ok(json.includes('tenant-1'), 'Should include tenantId in URL');
+    assert.ok(json.includes('請輸入您的工號'), 'Should prompt user to enter employee ID');
   });
 
   it('request_access returns "already approved" for approved user', async () => {
@@ -480,12 +484,7 @@ describe('WebhookEventService — follow + request_access', () => {
   });
 
   it('request_access allows re-registration for rejected user', async () => {
-    const { service, linePlatformClient, employeeBindingRepo, tenantRepo } = await createService();
-
-    const tenant = await tenantRepo.findById('tenant-1');
-    assert.ok(tenant);
-    tenant.line.resources.liffId = 'liff-abc123';
-    await tenantRepo.save(tenant);
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
 
     await employeeBindingRepo.upsert({
       tenantId: 'tenant-1',
@@ -508,16 +507,11 @@ describe('WebhookEventService — follow + request_access', () => {
     const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-rejected');
     assert.ok(reply);
     const json = JSON.stringify(reply.messages);
-    assert.ok(json.includes('員工註冊'), 'Rejected user should see registration link');
+    assert.ok(json.includes('請輸入您的工號'), 'Rejected user should be prompted to enter employee ID');
   });
 
   it('message "申請開通" routes to request_access handler', async () => {
-    const { service, linePlatformClient, tenantRepo } = await createService();
-
-    const tenant = await tenantRepo.findById('tenant-1');
-    assert.ok(tenant);
-    tenant.line.resources.liffId = 'liff-msg-test';
-    await tenantRepo.save(tenant);
+    const { service, linePlatformClient } = await createService();
 
     await service.processEvents('tenant-1', [{
       type: 'message',
@@ -531,7 +525,7 @@ describe('WebhookEventService — follow + request_access', () => {
     const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-msg-1');
     assert.ok(reply);
     const json = JSON.stringify(reply.messages);
-    assert.ok(json.includes('員工註冊'), 'Text message "申請開通" should trigger registration');
+    assert.ok(json.includes('請輸入您的工號'), 'Text message "申請開通" should prompt for employee ID');
   });
 
   it('message "員工服務" routes to services menu', async () => {
@@ -563,9 +557,8 @@ describe('WebhookEventService — follow + request_access', () => {
     assert.ok(json.includes('員工證'), 'Should show services menu');
   });
 
-  it('request_access shows error when liffId not configured', async () => {
+  it('request_access prompts for employee ID even without liffId', async () => {
     const { service, linePlatformClient } = await createService();
-    // Default tenant has no liffId set
 
     await service.processEvents('tenant-1', [{
       type: 'postback',
@@ -579,6 +572,140 @@ describe('WebhookEventService — follow + request_access', () => {
     const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-no-liff');
     assert.ok(reply);
     const json = JSON.stringify(reply.messages);
-    assert.ok(json.includes('系統尚未設定完成'));
+    assert.ok(json.includes('請輸入您的工號'), 'Should prompt for employee ID without liffId dependency');
+  });
+
+  it('start_bind postback routes to registration (same as request_access)', async () => {
+    const { service, linePlatformClient } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-start-bind',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-new' },
+      replyToken: 'reply-start-bind',
+      postback: { data: 'action=start_bind' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-start-bind');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('請輸入您的工號'), 'start_bind should prompt for employee ID');
+  });
+
+  it('follow event includes postback registration button for new user', async () => {
+    const { service, linePlatformClient } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'follow',
+      webhookEventId: 'evt-follow-new',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-new-user' },
+      replyToken: 'reply-follow-new'
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-follow-new');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('開始申請'), 'Should include registration button for new user');
+    assert.ok(json.includes('action=request_access'), 'Button should be postback action');
+    assert.ok(!json.includes('fillInText'), 'Should not pre-fill text');
+  });
+
+  it('direct employee ID text triggers inline registration for new user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-inline-reg',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-inline' },
+      replyToken: 'reply-inline-reg',
+      message: { type: 'text', id: 'msg-inline', text: 'E001' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-inline-reg');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('申請已送出'), 'Should confirm registration');
+
+    const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E001');
+    assert.ok(binding, 'Binding should be created');
+    assert.equal(binding.lineUserId, 'U-inline');
+    assert.equal(binding.accessStatus, 'PENDING');
+  });
+
+  it('"工號 E001" prefix also works for registration', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-prefix-reg',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-prefix' },
+      replyToken: 'reply-prefix-reg',
+      message: { type: 'text', id: 'msg-prefix', text: '工號 E002' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-prefix-reg');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('申請已送出'), 'Should confirm registration');
+
+    const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E002');
+    assert.ok(binding, 'Binding should be created with stripped prefix');
+    assert.equal(binding.lineUserId, 'U-prefix');
+  });
+
+  it('duplicate employee ID returns error for new user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-dup',
+      lineUserId: 'U-existing',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-inline-dup',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-dup-attempt' },
+      replyToken: 'reply-inline-dup',
+      message: { type: 'text', id: 'msg-dup', text: 'E-dup' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-inline-dup');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('already registered'), 'Should return duplicate error');
+  });
+
+  it('unrecognized text is ignored for already-bound user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-bound',
+      lineUserId: 'U-bound',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'APPROVED'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-random-text',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-bound' },
+      replyToken: 'reply-random',
+      message: { type: 'text', id: 'msg-random', text: 'hello' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-random');
+    assert.ok(!reply, 'Should not reply to unrecognized text from bound user');
   });
 });

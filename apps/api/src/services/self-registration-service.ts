@@ -14,7 +14,12 @@ export interface SelfRegisterInput {
   tenantId: string;
   lineIdToken: string;
   employeeId: string;
-  nickname: string;
+}
+
+export interface SelfRegisterByLineUserInput {
+  tenantId: string;
+  lineUserId: string;
+  employeeId: string;
 }
 
 export interface SelfRegisterResult {
@@ -43,22 +48,34 @@ export class SelfRegistrationService {
       idToken: input.lineIdToken
     });
 
+    return this.processRegistration(input.tenantId, lineUserId, input.employeeId);
+  }
+
+  async registerByLineUser(input: SelfRegisterByLineUserInput): Promise<SelfRegisterResult> {
+    return this.processRegistration(input.tenantId, input.lineUserId, input.employeeId);
+  }
+
+  private async processRegistration(
+    tenantId: string,
+    lineUserId: string,
+    employeeId: string
+  ): Promise<SelfRegisterResult> {
     // Check for duplicate employeeId
     const existingByEmployee = await this.employeeBindingRepository.findByEmployeeId(
-      input.tenantId,
-      input.employeeId
+      tenantId,
+      employeeId
     );
     if (existingByEmployee && existingByEmployee.employmentStatus === 'ACTIVE') {
       if (existingByEmployee.accessStatus === 'REJECTED') {
         // Allow re-registration for rejected employees
-        return this.reRegister(existingByEmployee, input, lineUserId);
+        return this.reRegister(existingByEmployee, tenantId, lineUserId, employeeId);
       }
-      throw new ConflictError(`Employee ID ${input.employeeId} is already registered`);
+      throw new ConflictError(`Employee ID ${employeeId} is already registered`);
     }
 
     // Check for duplicate lineUserId
     const existingByLine = await this.employeeBindingRepository.findActiveByLineUserId(
-      input.tenantId,
+      tenantId,
       lineUserId
     );
     if (existingByLine) {
@@ -68,22 +85,21 @@ export class SelfRegistrationService {
     const nowIso = this.options.now().toISOString();
 
     await this.employeeBindingRepository.upsert({
-      tenantId: input.tenantId,
-      employeeId: input.employeeId,
+      tenantId,
+      employeeId,
       lineUserId,
       boundAt: nowIso,
       employmentStatus: 'ACTIVE',
       accessStatus: 'PENDING',
       accessRequestedAt: nowIso,
-      nickname: input.nickname
     });
 
-    await this.linkPendingRichMenu(input.tenantId, lineUserId);
-    await this.notifyAdmins(input.tenantId, input.employeeId, input.nickname, nowIso);
+    await this.linkPendingRichMenu(tenantId, lineUserId);
+    await this.notifyAdmins(tenantId, employeeId, nowIso);
 
     return {
-      tenantId: input.tenantId,
-      employeeId: input.employeeId,
+      tenantId,
+      employeeId,
       accessStatus: 'PENDING',
       registeredAt: nowIso
     };
@@ -91,30 +107,30 @@ export class SelfRegistrationService {
 
   private async reRegister(
     existing: { tenantId: string; employeeId: string; lineUserId: string },
-    input: SelfRegisterInput,
-    lineUserId: string
+    tenantId: string,
+    lineUserId: string,
+    employeeId: string
   ): Promise<SelfRegisterResult> {
     const nowIso = this.options.now().toISOString();
 
     await this.employeeBindingRepository.upsert({
-      tenantId: input.tenantId,
-      employeeId: input.employeeId,
-      lineUserId: existing.lineUserId === lineUserId ? lineUserId : lineUserId,
+      tenantId,
+      employeeId,
+      lineUserId,
       boundAt: nowIso,
       employmentStatus: 'ACTIVE',
       accessStatus: 'PENDING',
       accessRequestedAt: nowIso,
       accessReviewedAt: undefined,
-      accessReviewedBy: undefined,
-      nickname: input.nickname
+      accessReviewedBy: undefined
     });
 
-    await this.linkPendingRichMenu(input.tenantId, lineUserId);
-    await this.notifyAdmins(input.tenantId, input.employeeId, input.nickname, nowIso);
+    await this.linkPendingRichMenu(tenantId, lineUserId);
+    await this.notifyAdmins(tenantId, employeeId, nowIso);
 
     return {
-      tenantId: input.tenantId,
-      employeeId: input.employeeId,
+      tenantId,
+      employeeId,
       accessStatus: 'PENDING',
       registeredAt: nowIso
     };
@@ -135,7 +151,6 @@ export class SelfRegistrationService {
   private async notifyAdmins(
     tenantId: string,
     employeeId: string,
-    nickname: string,
     requestedAt: string
   ): Promise<void> {
     const bindings = await this.employeeBindingRepository.listByTenant(tenantId);
@@ -147,7 +162,6 @@ export class SelfRegistrationService {
 
     const message = buildNewAccessRequestNotificationFlexMessage({
       employeeId,
-      nickname,
       requestedAt
     });
 

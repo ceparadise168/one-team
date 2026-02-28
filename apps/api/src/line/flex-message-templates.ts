@@ -1,84 +1,76 @@
 import { LineMessage } from './line-platform-client.js';
 
-export function buildWelcomeFlexMessage(tenantName: string): LineMessage {
+export function buildWelcomeFlexMessage(
+  tenantName: string,
+  options?: { showRegistration?: boolean }
+): LineMessage {
+  const showRegistration = options?.showRegistration ?? false;
+
+  const bubble: Record<string, unknown> = {
+    type: 'bubble',
+    hero: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '歡迎使用 ONE TEAM',
+          weight: 'bold',
+          size: 'xl',
+          align: 'center',
+          color: '#1DB446'
+        }
+      ],
+      paddingAll: '20px',
+      backgroundColor: '#F5F7FA'
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: tenantName,
+          weight: 'bold',
+          size: 'lg'
+        },
+        {
+          type: 'text',
+          text: showRegistration
+            ? '歡迎加入！請點選下方按鈕申請開通您的員工身份。'
+            : '歡迎加入！請從下方選單使用員工服務。',
+          wrap: true,
+          margin: 'md',
+          color: '#666666'
+        }
+      ]
+    }
+  };
+
+  if (showRegistration) {
+    bubble.footer = {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'button',
+          action: {
+            type: 'postback',
+            label: '開始申請',
+            data: 'action=request_access',
+            displayText: '申請開通'
+          },
+          style: 'primary',
+          color: '#1DB446'
+        }
+      ]
+    };
+  }
+
   return {
     type: 'flex',
     altText: `歡迎使用 ${tenantName} ONE TEAM`,
-    contents: {
-      type: 'bubble',
-      hero: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '歡迎使用 ONE TEAM',
-            weight: 'bold',
-            size: 'xl',
-            align: 'center',
-            color: '#1DB446'
-          }
-        ],
-        paddingAll: '20px',
-        backgroundColor: '#F5F7FA'
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: tenantName,
-            weight: 'bold',
-            size: 'lg'
-          },
-          {
-            type: 'text',
-            text: '歡迎加入！請點選下方選單開始綁定您的員工身份。',
-            wrap: true,
-            margin: 'md',
-            color: '#666666'
-          }
-        ]
-      }
-    }
-  };
-}
-
-export function buildBindingInstructionFlexMessage(bindingCode: string): LineMessage {
-  return {
-    type: 'flex',
-    altText: '員工綁定指引',
-    contents: {
-      type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '員工綁定',
-            weight: 'bold',
-            size: 'lg'
-          },
-          {
-            type: 'text',
-            text: '請輸入您的員工編號和以下綁定碼：',
-            wrap: true,
-            margin: 'md'
-          },
-          {
-            type: 'text',
-            text: bindingCode,
-            weight: 'bold',
-            size: 'xxl',
-            align: 'center',
-            margin: 'lg',
-            color: '#1DB446'
-          }
-        ]
-      }
-    }
+    contents: bubble
   };
 }
 
@@ -397,63 +389,13 @@ export function buildAdminActionResultFlexMessage(input: {
   };
 }
 
-export function buildRegistrationInstructionFlexMessage(input: {
-  tenantName: string;
-  liffRegisterUrl: string;
-}): LineMessage {
-  return {
-    type: 'flex',
-    altText: '員工註冊 — 請填寫資料',
-    contents: {
-      type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '員工註冊',
-            weight: 'bold',
-            size: 'xl',
-            color: '#1a73e8'
-          },
-          {
-            type: 'text',
-            text: `請點選下方按鈕，填寫您在 ${input.tenantName} 的員工資料以申請開通。`,
-            wrap: true,
-            margin: 'md',
-            color: '#666666'
-          }
-        ]
-      },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'button',
-            action: {
-              type: 'uri',
-              label: '填寫員工資料',
-              uri: input.liffRegisterUrl
-            },
-            style: 'primary',
-            color: '#1a73e8'
-          }
-        ]
-      }
-    }
-  };
-}
-
 export function buildNewAccessRequestNotificationFlexMessage(input: {
   employeeId: string;
-  nickname: string;
   requestedAt: string;
 }): LineMessage {
   return {
     type: 'flex',
-    altText: `新員工 ${input.nickname} (${input.employeeId}) 申請開通`,
+    altText: `員工 ${input.employeeId} 申請開通`,
     contents: {
       type: 'bubble',
       header: {
@@ -475,7 +417,7 @@ export function buildNewAccessRequestNotificationFlexMessage(input: {
         contents: [
           {
             type: 'text',
-            text: `${input.nickname} (${input.employeeId})`,
+            text: `工號：${input.employeeId}`,
             weight: 'bold',
             size: 'md'
           },

@@ -43,8 +43,7 @@ describe('SelfRegistrationService', () => {
     const result = await service.register({
       tenantId: 'tenant-1',
       lineIdToken: 'line-id:U-new-user',
-      employeeId: 'E001',
-      nickname: '小明'
+      employeeId: 'E001'
     });
 
     assert.equal(result.tenantId, 'tenant-1');
@@ -56,18 +55,16 @@ describe('SelfRegistrationService', () => {
     assert.ok(binding);
     assert.equal(binding.lineUserId, 'U-new-user');
     assert.equal(binding.accessStatus, 'PENDING');
-    assert.equal(binding.nickname, '小明');
     assert.equal(binding.employmentStatus, 'ACTIVE');
   });
 
   it('links pending rich menu after registration', async () => {
-    const { service, linePlatformClient } = await createContext();
+    const { service } = await createContext();
 
     await service.register({
       tenantId: 'tenant-1',
       lineIdToken: 'line-id:U-menu-user',
-      employeeId: 'E002',
-      nickname: '小華'
+      employeeId: 'E002'
     });
 
     // StubLinePlatformClient doesn't record linkRichMenu calls in an array,
@@ -92,8 +89,7 @@ describe('SelfRegistrationService', () => {
     await service.register({
       tenantId: 'tenant-1',
       lineIdToken: 'line-id:U-notify-user',
-      employeeId: 'E003',
-      nickname: '小華'
+      employeeId: 'E003'
     });
 
     assert.equal(linePlatformClient.pushedMessages.length, 1);
@@ -101,7 +97,6 @@ describe('SelfRegistrationService', () => {
     assert.equal(push.lineUserId, 'U-admin');
     const json = JSON.stringify(push.messages);
     assert.ok(json.includes('E003'));
-    assert.ok(json.includes('小華'));
     assert.ok(json.includes('新員工申請開通'));
   });
 
@@ -121,8 +116,7 @@ describe('SelfRegistrationService', () => {
       () => service.register({
         tenantId: 'tenant-1',
         lineIdToken: 'line-id:U-dup-attempt',
-        employeeId: 'E-dup',
-        nickname: '重複'
+        employeeId: 'E-dup'
       }),
       (error) => {
         assert.ok(error instanceof ConflictError);
@@ -148,8 +142,7 @@ describe('SelfRegistrationService', () => {
       () => service.register({
         tenantId: 'tenant-1',
         lineIdToken: 'line-id:U-dup-line',
-        employeeId: 'E-new',
-        nickname: '新員工'
+        employeeId: 'E-new'
       }),
       (error) => {
         assert.ok(error instanceof ConflictError);
@@ -176,8 +169,7 @@ describe('SelfRegistrationService', () => {
     const result = await service.register({
       tenantId: 'tenant-1',
       lineIdToken: 'line-id:U-rejected',
-      employeeId: 'E-rejected',
-      nickname: '再次申請'
+      employeeId: 'E-rejected'
     });
 
     assert.equal(result.accessStatus, 'PENDING');
@@ -185,7 +177,6 @@ describe('SelfRegistrationService', () => {
     const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E-rejected');
     assert.ok(binding);
     assert.equal(binding.accessStatus, 'PENDING');
-    assert.equal(binding.nickname, '再次申請');
     assert.equal(binding.accessReviewedAt, undefined);
     assert.equal(binding.accessReviewedBy, undefined);
   });
@@ -197,8 +188,7 @@ describe('SelfRegistrationService', () => {
       () => service.register({
         tenantId: 'tenant-1',
         lineIdToken: 'invalid-token',
-        employeeId: 'E-bad',
-        nickname: '壞的'
+        employeeId: 'E-bad'
       }),
       (error) => {
         assert.ok(error instanceof Error);
@@ -206,5 +196,70 @@ describe('SelfRegistrationService', () => {
         return true;
       }
     );
+  });
+
+  it('registerByLineUser registers without lineIdToken validation', async () => {
+    const { service, employeeBindingRepo } = await createContext();
+
+    const result = await service.registerByLineUser({
+      tenantId: 'tenant-1',
+      lineUserId: 'U-direct',
+      employeeId: 'E-direct'
+    });
+
+    assert.equal(result.tenantId, 'tenant-1');
+    assert.equal(result.employeeId, 'E-direct');
+    assert.equal(result.accessStatus, 'PENDING');
+
+    const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E-direct');
+    assert.ok(binding);
+    assert.equal(binding.lineUserId, 'U-direct');
+    assert.equal(binding.accessStatus, 'PENDING');
+  });
+
+  it('registerByLineUser rejects duplicate employeeId', async () => {
+    const { service, employeeBindingRepo } = await createContext();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-dup',
+      lineUserId: 'U-existing',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING'
+    });
+
+    await assert.rejects(
+      () => service.registerByLineUser({
+        tenantId: 'tenant-1',
+        lineUserId: 'U-other',
+        employeeId: 'E-dup'
+      }),
+      (error) => {
+        assert.ok(error instanceof ConflictError);
+        return true;
+      }
+    );
+  });
+
+  it('registerByLineUser allows re-registration for rejected employee', async () => {
+    const { service, employeeBindingRepo } = await createContext();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-rej',
+      lineUserId: 'U-rej',
+      boundAt: '2026-02-15T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'REJECTED'
+    });
+
+    const result = await service.registerByLineUser({
+      tenantId: 'tenant-1',
+      lineUserId: 'U-rej',
+      employeeId: 'E-rej'
+    });
+
+    assert.equal(result.accessStatus, 'PENDING');
   });
 });

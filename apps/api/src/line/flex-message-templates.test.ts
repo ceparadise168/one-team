@@ -2,7 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildWelcomeFlexMessage,
-  buildBindingInstructionFlexMessage,
   buildAccessConfirmationFlexMessage,
   buildOffboardingNotificationFlexMessage,
   buildAdminDashboardFlexMessage,
@@ -12,20 +11,22 @@ import {
 } from './flex-message-templates.js';
 
 describe('buildWelcomeFlexMessage', () => {
-  it('returns flex message with tenant name', () => {
+  it('returns flex message with tenant name, no registration button by default', () => {
     const msg = buildWelcomeFlexMessage('Acme Corp');
     assert.equal(msg.type, 'flex');
     assert.ok(msg.altText?.includes('Acme Corp'));
     assert.ok(msg.contents);
+    assert.ok(!JSON.stringify(msg.contents).includes('開始申請'));
   });
-});
 
-describe('buildBindingInstructionFlexMessage', () => {
-  it('returns flex message with binding code', () => {
-    const msg = buildBindingInstructionFlexMessage('12345678');
-    assert.equal(msg.type, 'flex');
-    assert.ok(msg.altText?.includes('綁定'));
-    assert.ok(JSON.stringify(msg.contents).includes('12345678'));
+  it('includes postback registration button when showRegistration is true', () => {
+    const msg = buildWelcomeFlexMessage('Acme Corp', { showRegistration: true });
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('開始申請'));
+    assert.ok(json.includes('action=request_access'));
+    assert.ok(json.includes('postback'));
+    assert.ok(!json.includes('liff.line.me'), 'Should not include LIFF URL');
+    assert.ok(!json.includes('fillInText'), 'Should not pre-fill text');
   });
 });
 

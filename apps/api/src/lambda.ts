@@ -152,8 +152,7 @@ const retryOffboardingJobSchema = z.object({
 const selfRegisterSchema = z.object({
   tenantId: z.string().min(1),
   lineIdToken: z.string().min(1),
-  employeeId: z.string().min(1).max(50),
-  nickname: z.string().min(1).max(50)
+  employeeId: z.string().min(1).max(50)
 });
 
 const adminLoginSchema = z.object({
@@ -386,6 +385,14 @@ const adminAuthService = new AdminAuthService(adminAccountRepository, {
   now: () => new Date()
 });
 
+const selfRegistrationService = new SelfRegistrationService(
+  lineAuthClient,
+  employeeBindingRepository,
+  tenantRepository,
+  linePlatformClient,
+  { now: () => new Date() }
+);
+
 const webhookEventService = new WebhookEventService(
   webhookEventRepository,
   employeeBindingRepository,
@@ -393,14 +400,7 @@ const webhookEventService = new WebhookEventService(
   linePlatformClient,
   employeeAccessGovernanceService,
   tenantRepository,
-  { now: () => new Date() }
-);
-
-const selfRegistrationService = new SelfRegistrationService(
-  lineAuthClient,
-  employeeBindingRepository,
-  tenantRepository,
-  linePlatformClient,
+  selfRegistrationService,
   { now: () => new Date() }
 );
 

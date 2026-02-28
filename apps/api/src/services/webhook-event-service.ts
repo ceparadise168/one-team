@@ -9,7 +9,6 @@ import {
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
   buildAdminActionResultFlexMessage,
-  buildRegistrationInstructionFlexMessage,
   buildAccessConfirmationFlexMessage
 } from '../line/flex-message-templates.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';
@@ -18,6 +17,8 @@ import { AuditEventRepository } from '../repositories/offboarding-repository.js'
 import { TenantRepository } from '../repositories/tenant-repository.js';
 import { WebhookEventRepository } from '../repositories/webhook-event-repository.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
+import { SelfRegistrationService } from './self-registration-service.js';
+import { ConflictError } from '../errors.js';
 import { randomUUID } from 'node:crypto';
 
 export interface WebhookEventServiceOptions {
@@ -32,6 +33,7 @@ export class WebhookEventService {
     private readonly linePlatformClient: LinePlatformClient,
     private readonly accessGovernanceService: EmployeeAccessGovernanceService,
     private readonly tenantRepository: TenantRepository,
+    private readonly selfRegistrationService: SelfRegistrationService,
     private readonly options: WebhookEventServiceOptions = { now: () => new Date() }
   ) {}
 
@@ -100,10 +102,12 @@ export class WebhookEventService {
 
     if (event.replyToken) {
       const tenantName = tenant?.tenantName ?? 'ONE TEAM';
+      const needsRegistration = !existingBinding || existingBinding.accessStatus === 'REJECTED';
+
       await this.linePlatformClient.replyMessage({
         tenantId,
         replyToken: event.replyToken,
-        messages: [buildWelcomeFlexMessage(tenantName)]
+        messages: [buildWelcomeFlexMessage(tenantName, { showRegistration: needsRegistration })]
       });
     }
   }
@@ -122,6 +126,50 @@ export class WebhookEventService {
         return;
       default:
         break;
+    }
+
+    // Unrecognized text → try inline registration for users without active binding
+    const lineUserId = event.source.userId;
+    if (lineUserId) {
+      const existing = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
+      if (!existing || existing.accessStatus === 'REJECTED') {
+        const employeeIdMatch = text.match(/^工號\s*(.+)$/);
+        const employeeId = employeeIdMatch ? employeeIdMatch[1].trim() : text;
+        await this.handleInlineRegistration(tenantId, event, employeeId);
+      }
+    }
+  }
+
+  private async handleInlineRegistration(
+    tenantId: string,
+    event: LineWebhookEvent,
+    employeeId: string
+  ): Promise<void> {
+    const lineUserId = event.source.userId;
+    if (!lineUserId || !event.replyToken) return;
+
+    try {
+      await this.selfRegistrationService.registerByLineUser({
+        tenantId,
+        lineUserId,
+        employeeId
+      });
+
+      await this.linePlatformClient.replyMessage({
+        tenantId,
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: '申請已送出，請等候管理員審核。' }]
+      });
+    } catch (error) {
+      const message = error instanceof ConflictError
+        ? error.message
+        : '註冊失敗，請稍後再試。';
+
+      await this.linePlatformClient.replyMessage({
+        tenantId,
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: message }]
+      });
     }
   }
 
@@ -155,6 +203,7 @@ export class WebhookEventService {
 
     switch (parsed.action) {
       case 'request_access':
+      case 'start_bind':
         await this.handleRequestAccess(tenantId, event);
         return;
       case 'services_menu':
@@ -229,24 +278,10 @@ export class WebhookEventService {
       // REJECTED — allow re-registration
     }
 
-    const tenant = await this.tenantRepository.findById(tenantId);
-    const tenantName = tenant?.tenantName ?? 'ONE TEAM';
-    const liffId = tenant?.line.resources.liffId;
-
-    if (!liffId) {
-      await this.linePlatformClient.replyMessage({
-        tenantId,
-        replyToken: event.replyToken,
-        messages: [{ type: 'text', text: '系統尚未設定完成，請聯絡管理員。' }]
-      });
-      return;
-    }
-
-    const liffRegisterUrl = `https://liff.line.me/${liffId}/register?tenantId=${tenantId}`;
     await this.linePlatformClient.replyMessage({
       tenantId,
       replyToken: event.replyToken,
-      messages: [buildRegistrationInstructionFlexMessage({ tenantName, liffRegisterUrl })]
+      messages: [{ type: 'text', text: '請輸入您的工號（例如：E001）' }]
     });
   }
 

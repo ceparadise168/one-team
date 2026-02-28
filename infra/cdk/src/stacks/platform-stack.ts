@@ -82,7 +82,8 @@ export class PlatformStack extends Stack {
         EMPLOYEES_TABLE_NAME: `${prefix}-employees`,
         SESSIONS_TABLE_NAME: `${prefix}-sessions`,
         TOKEN_REVOCATIONS_TABLE_NAME: `${prefix}-token-revocations`,
-        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`
+        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
+        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174'
       }
     });
 
@@ -223,7 +224,6 @@ export class PlatformStack extends Stack {
       handler: 'handler',
       timeout: Duration.seconds(30),
       memorySize: 256,
-      reservedConcurrentExecutions: 10,
       tracing: lambda.Tracing.ACTIVE,
       environment: {
         USE_DYNAMODB_REPOSITORIES: 'true',

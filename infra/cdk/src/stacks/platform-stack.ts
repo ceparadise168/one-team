@@ -83,6 +83,8 @@ export class PlatformStack extends Stack {
         SESSIONS_TABLE_NAME: `${prefix}-sessions`,
         TOKEN_REVOCATIONS_TABLE_NAME: `${prefix}-token-revocations`,
         AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
+        VOLUNTEER_TABLE_NAME: `${prefix}-volunteer`,
+        DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
         CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174'
       }
     });
@@ -204,12 +206,32 @@ export class PlatformStack extends Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
+    const volunteerTable = new dynamodb.Table(this, 'VolunteerTable', {
+      ...tableProps,
+      tableName: `${prefix}-volunteer`
+    });
+
+    volunteerTable.addGlobalSecondaryIndex({
+      indexName: 'gsi-status-date',
+      partitionKey: { name: 'gsi_status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'activity_date', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
+    volunteerTable.addGlobalSecondaryIndex({
+      indexName: 'gsi-employee',
+      partitionKey: { name: 'employee_id', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'registered_at', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
     tenantsTable.grantReadWriteData(apiRuntimeHandler);
     invitationsTable.grantReadWriteData(apiRuntimeHandler);
     employeesTable.grantReadWriteData(apiRuntimeHandler);
     sessionsTable.grantReadWriteData(apiRuntimeHandler);
     tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
     auditEventsTable.grantReadWriteData(apiRuntimeHandler);
+    volunteerTable.grantReadWriteData(apiRuntimeHandler);
 
     invitationsQueue.grantSendMessages(apiRuntimeHandler);
     offboardingQueue.grantSendMessages(apiRuntimeHandler);

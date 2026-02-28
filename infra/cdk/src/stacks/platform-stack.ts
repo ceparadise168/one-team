@@ -15,7 +15,10 @@ import {
   aws_logs as logs,
   aws_ses as ses,
   aws_secretsmanager as secretsmanager,
+  aws_s3 as s3,
   aws_sqs as sqs,
+  aws_cloudfront as cloudfront,
+  aws_cloudfront_origins as origins,
   aws_wafv2 as wafv2
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -387,6 +390,48 @@ export class PlatformStack extends Stack {
       }),
       threshold: 3,
       evaluationPeriods: 1
+    });
+
+    const miniAppBucket = new s3.Bucket(this, 'MiniAppBucket', {
+      bucketName: `${prefix}-miniapp`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
+    });
+
+    const miniAppDistribution = new cloudfront.Distribution(this, 'MiniAppDistribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(miniAppBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html'
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html'
+        }
+      ]
+    });
+
+    apiRuntimeHandler.addEnvironment(
+      'MINI_APP_BASE_URL',
+      `https://${miniAppDistribution.distributionDomainName}`
+    );
+
+    new CfnOutput(this, 'MiniAppDistributionDomain', {
+      value: miniAppDistribution.distributionDomainName,
+      description: 'Mini App CloudFront domain'
+    });
+
+    new CfnOutput(this, 'MiniAppBucketName', {
+      value: miniAppBucket.bucketName,
+      description: 'Mini App S3 bucket for deployment'
     });
 
     new CfnOutput(this, 'ApiUrl', {

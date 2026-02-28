@@ -508,9 +508,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 200) : 50;
 
       const bindings = await employeeBindingRepository.listByTenant(tenantId);
+      const activeBindings = bindings.filter(b => b.employmentStatus === 'ACTIVE');
       const filtered = statusFilter
-        ? bindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
-        : bindings;
+        ? activeBindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
+        : activeBindings;
 
       const employees = filtered.slice(0, limit).map(b => ({
         employeeId: b.employeeId,

@@ -24,7 +24,7 @@ export function EmployeeList({ api, tenantId }: EmployeeListProps) {
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { employees, isLoading, error, approve, reject, refresh } = useEmployeeList({
+  const { employees, isLoading, error, actionInProgress, approve, reject, refresh } = useEmployeeList({
     api,
     tenantId,
     status: statusFilter || undefined
@@ -35,6 +35,14 @@ export function EmployeeList({ api, tenantId }: EmployeeListProps) {
         emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : employees;
+
+  const handleApprove = async (employeeId: string) => {
+    await approve(employeeId);
+  };
+
+  const handleReject = async (employeeId: string) => {
+    await reject(employeeId);
+  };
 
   return (
     <section>
@@ -92,35 +100,46 @@ export function EmployeeList({ api, tenantId }: EmployeeListProps) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((emp) => (
-              <tr key={emp.employeeId} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '8px 4px' }}>{emp.nickname ?? '-'}</td>
-                <td style={{ padding: '8px 4px', fontFamily: 'monospace' }}>{emp.employeeId}</td>
-                <td style={{ padding: '8px 4px', color: STATUS_COLORS[emp.accessStatus] ?? '#333', fontWeight: 'bold' }}>
-                  {emp.accessStatus}
-                </td>
-                <td style={{ padding: '8px 4px' }}>{new Date(emp.boundAt).toLocaleString('zh-TW')}</td>
-                <td style={{ padding: '8px 4px' }}>
-                  {emp.accessStatus !== 'APPROVED' && (
-                    <button
-                      type="button"
-                      onClick={() => void approve(emp.employeeId)}
-                      style={{ marginRight: 4 }}
-                    >
-                      核准
-                    </button>
-                  )}
-                  {emp.accessStatus !== 'REJECTED' && (
-                    <button
-                      type="button"
-                      onClick={() => void reject(emp.employeeId)}
-                    >
-                      拒絕
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {filtered.map((emp) => {
+              const isBusy = actionInProgress === emp.employeeId;
+              return (
+                <tr key={emp.employeeId} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '8px 4px' }}>{emp.nickname ?? '-'}</td>
+                  <td style={{ padding: '8px 4px', fontFamily: 'monospace' }}>{emp.employeeId}</td>
+                  <td style={{ padding: '8px 4px', color: STATUS_COLORS[emp.accessStatus] ?? '#333', fontWeight: 'bold' }}>
+                    {emp.accessStatus}
+                  </td>
+                  <td style={{ padding: '8px 4px' }}>{new Date(emp.boundAt).toLocaleString('zh-TW')}</td>
+                  <td style={{ padding: '8px 4px' }}>
+                    {isBusy ? (
+                      <span style={{ color: '#999' }}>處理中…</span>
+                    ) : (
+                      <>
+                        {emp.accessStatus !== 'APPROVED' && (
+                          <button
+                            type="button"
+                            onClick={() => { handleApprove(emp.employeeId).catch(() => {}); }}
+                            disabled={!!actionInProgress}
+                            style={{ marginRight: 4 }}
+                          >
+                            核准
+                          </button>
+                        )}
+                        {emp.accessStatus !== 'REJECTED' && (
+                          <button
+                            type="button"
+                            onClick={() => { handleReject(emp.employeeId).catch(() => {}); }}
+                            disabled={!!actionInProgress}
+                          >
+                            拒絕
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

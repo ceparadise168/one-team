@@ -12,6 +12,7 @@ interface UseEmployeeListResult {
   employees: Employee[];
   isLoading: boolean;
   error: string | null;
+  actionInProgress: string | null;
   approve: (employeeId: string) => Promise<void>;
   reject: (employeeId: string) => Promise<void>;
   refresh: () => void;
@@ -25,6 +26,7 @@ export function useEmployeeList({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   const refresh = useCallback(() => setRefreshCounter((c) => c + 1), []);
@@ -43,19 +45,35 @@ export function useEmployeeList({
 
   const approve = useCallback(
     async (employeeId: string) => {
-      await decideAccess(api, tenantId, employeeId, 'APPROVE', 'admin');
-      refresh();
+      setError(null);
+      setActionInProgress(employeeId);
+      try {
+        await decideAccess(api, tenantId, employeeId, 'APPROVE', 'admin');
+        refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '核准失敗');
+      } finally {
+        setActionInProgress(null);
+      }
     },
     [api, tenantId, refresh]
   );
 
   const reject = useCallback(
     async (employeeId: string) => {
-      await decideAccess(api, tenantId, employeeId, 'REJECT', 'admin');
-      refresh();
+      setError(null);
+      setActionInProgress(employeeId);
+      try {
+        await decideAccess(api, tenantId, employeeId, 'REJECT', 'admin');
+        refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '拒絕失敗');
+      } finally {
+        setActionInProgress(null);
+      }
     },
     [api, tenantId, refresh]
   );
 
-  return { employees, isLoading, error, approve, reject, refresh };
+  return { employees, isLoading, error, actionInProgress, approve, reject, refresh };
 }

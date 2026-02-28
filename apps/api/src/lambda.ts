@@ -69,6 +69,7 @@ import { VolunteerService } from './services/volunteer-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
 import { InMemoryVolunteerRepository } from './repositories/volunteer-repository.js';
+import { DynamoDbVolunteerRepository } from './repositories/dynamodb-volunteer-repository.js';
 import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
 import { InMemoryAsyncJobDispatcher, SqsAsyncJobDispatcher, AsyncJobDispatcher } from './workers/async-job-dispatcher.js';
 import { createRequestLogger } from './logging/request-context.js';
@@ -410,8 +411,10 @@ const webhookEventService = new WebhookEventService(
   }
 );
 
-const volunteerRepository = new InMemoryVolunteerRepository();
-// TODO Task 10: Replace with DynamoDbVolunteerRepository when USE_DYNAMODB_REPOSITORIES is set
+const volunteerRepository =
+  process.env.USE_DYNAMODB_REPOSITORIES === 'true'
+    ? new DynamoDbVolunteerRepository(dynamoDbClient!, process.env.VOLUNTEER_TABLE_NAME!)
+    : new InMemoryVolunteerRepository();
 const volunteerService = new VolunteerService(volunteerRepository, employeeBindingRepository, {
   tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
   signingSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-signing-secret',

@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { RegistrationForm } from './features/registration/registration-form';
 import { DigitalIdCard } from './features/digital-id/digital-id-card';
+import { ActivityList } from './features/volunteer/activity-list';
+import { ActivityDetail } from './features/volunteer/activity-detail';
+import { CreateActivity } from './features/volunteer/create-activity';
+import { CheckIn } from './features/volunteer/check-in';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
@@ -29,6 +33,36 @@ function App() {
               tenantId={tenantId}
               accessToken={accessToken}
             />
+          }
+        />
+        <Route
+          path="/volunteer"
+          element={
+            <ActivityList apiBaseUrl={apiBaseUrl} accessToken={accessToken} />
+          }
+        />
+        <Route
+          path="/volunteer/create"
+          element={
+            <CreateActivity apiBaseUrl={apiBaseUrl} accessToken={accessToken} />
+          }
+        />
+        <Route
+          path="/volunteer/:activityId"
+          element={
+            <ActivityDetail apiBaseUrl={apiBaseUrl} accessToken={accessToken} />
+          }
+        />
+        <Route
+          path="/volunteer/:activityId/scan"
+          element={
+            <CheckIn apiBaseUrl={apiBaseUrl} accessToken={accessToken} mode="organizer" />
+          }
+        />
+        <Route
+          path="/volunteer/:activityId/check-in"
+          element={
+            <CheckIn apiBaseUrl={apiBaseUrl} accessToken={accessToken} mode="self" />
           }
         />
         <Route

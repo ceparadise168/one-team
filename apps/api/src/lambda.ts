@@ -64,6 +64,7 @@ import { OffboardingService } from './services/offboarding-service.js';
 import { EmployeeAccessGovernanceService } from './services/employee-access-governance-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 import { AdminAuthService } from './services/admin-auth-service.js';
+import { SelfRegistrationService } from './services/self-registration-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
 import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
@@ -116,42 +117,9 @@ const lineWebhookPayloadSchema = z
   })
   .passthrough();
 
-const createInvitationSchema = z.object({
-  ttlMinutes: z.number().int().min(1).max(1440).default(60),
-  usageLimit: z.number().int().min(1).max(50).default(1)
-});
-
-const createSelfInviteSchema = z.object({
-  employeeId: z.string().min(1),
-  email: z.string().email().optional(),
-  ttlMinutes: z.number().int().min(1).max(1440).default(60),
-  usageLimit: z.number().int().min(1).max(50).default(1)
-});
-
-const batchInviteSchema = z.object({
-  ttlMinutes: z.number().int().min(1).max(1440).default(60),
-  recipients: z
-    .array(
-      z.object({
-        email: z.string().email(),
-        employeeId: z.string().min(1)
-      })
-    )
-    .min(1)
-    .max(500)
-});
-
-const dispatchBatchInviteJobSchema = z.object({});
-
-const bindStartSchema = z.object({
-  lineIdToken: z.string().min(1),
-  invitationToken: z.string().min(1)
-});
-
-const bindCompleteSchema = z.object({
-  bindSessionToken: z.string().min(1),
-  employeeId: z.string().min(1),
-  bindingCode: z.string().min(1)
+const lineLoginSchema = z.object({
+  tenantId: z.string().min(1),
+  lineIdToken: z.string().min(1)
 });
 
 const refreshSessionSchema = z.object({
@@ -179,6 +147,13 @@ const offboardEmployeeSchema = z.object({
 
 const retryOffboardingJobSchema = z.object({
   actorId: z.string().min(1).optional()
+});
+
+const selfRegisterSchema = z.object({
+  tenantId: z.string().min(1),
+  lineIdToken: z.string().min(1),
+  employeeId: z.string().min(1).max(50),
+  nickname: z.string().min(1).max(50)
 });
 
 const adminLoginSchema = z.object({
@@ -417,6 +392,15 @@ const webhookEventService = new WebhookEventService(
   auditEventRepository,
   linePlatformClient,
   employeeAccessGovernanceService,
+  tenantRepository,
+  { now: () => new Date() }
+);
+
+const selfRegistrationService = new SelfRegistrationService(
+  lineAuthClient,
+  employeeBindingRepository,
+  tenantRepository,
+  linePlatformClient,
   { now: () => new Date() }
 );
 
@@ -515,72 +499,57 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, snapshot, responseOptions);
     }
 
-    const createInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites$/);
-    if (method === 'POST' && createInviteMatch) {
-      await authorizeAdminOrPermission({
-        event,
-        tenantId: createInviteMatch[1],
-        permission: 'canInvite'
-      });
-      const payload = createInvitationSchema.parse(parseBody(event));
-      const invitation = await invitationBindingService.createInvitation({
-        tenantId: createInviteMatch[1],
-        ttlMinutes: payload.ttlMinutes,
-        usageLimit: payload.usageLimit
-      });
-      return jsonResponse(201, invitation, responseOptions);
-    }
-
-    const batchInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-email$/);
-    if (method === 'POST' && batchInviteMatch) {
-      await authorizeAdminOrPermission({
-        event,
-        tenantId: batchInviteMatch[1],
-        permission: 'canInvite'
-      });
-      const payload = batchInviteSchema.parse(parseBody(event));
-      const job = await invitationBindingService.createBatchInvites({
-        tenantId: batchInviteMatch[1],
-        ttlMinutes: payload.ttlMinutes,
-        recipients: payload.recipients
-      });
-      return jsonResponse(202, job, responseOptions);
-    }
-
-    const dispatchBatchInviteMatch = path.match(
-      /^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-jobs\/([^/]+)\/dispatch$/
-    );
-    if (method === 'POST' && dispatchBatchInviteMatch) {
+    const employeesListMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/employees$/);
+    if (method === 'GET' && employeesListMatch) {
       assertAdminAuthorized(event);
-      dispatchBatchInviteJobSchema.parse(parseBody(event));
-      const job = await invitationBindingService.dispatchBatchInviteJob({
-        tenantId: dispatchBatchInviteMatch[1],
-        jobId: dispatchBatchInviteMatch[2]
-      });
-      return jsonResponse(200, job, responseOptions);
+      const tenantId = employeesListMatch[1];
+      const statusFilter = event.queryStringParameters?.status;
+      const limitParam = event.queryStringParameters?.limit;
+      const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 200) : 50;
+
+      const bindings = await employeeBindingRepository.listByTenant(tenantId);
+      const filtered = statusFilter
+        ? bindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
+        : bindings;
+
+      const employees = filtered.slice(0, limit).map(b => ({
+        employeeId: b.employeeId,
+        nickname: b.nickname,
+        accessStatus: b.accessStatus ?? 'PENDING',
+        boundAt: b.boundAt,
+        accessRequestedAt: b.accessRequestedAt,
+        accessReviewedAt: b.accessReviewedAt,
+        accessReviewedBy: b.accessReviewedBy
+      }));
+
+      return jsonResponse(200, { employees }, responseOptions);
     }
 
-    if (method === 'POST' && path === '/v1/public/bind/start') {
-      const payload = bindStartSchema.parse(parseBody(event));
-      const result = await invitationBindingService.startBinding(payload);
+    if (method === 'POST' && path === '/v1/public/self-register') {
+      const payload = selfRegisterSchema.parse(parseBody(event));
+      const result = await selfRegistrationService.register(payload);
       return jsonResponse(200, result, responseOptions);
     }
 
-    if (method === 'POST' && path === '/v1/public/bind/complete') {
-      const payload = bindCompleteSchema.parse(parseBody(event));
-      const bindingResult = await invitationBindingService.completeBinding(payload);
-
-      const tokens = await authSessionService.issueEmployeeSession({
-        tenantId: bindingResult.tenantId,
-        lineUserId: bindingResult.lineUserId,
-        employeeId: bindingResult.employeeId
+    if (method === 'POST' && path === '/v1/public/auth/line-login') {
+      const payload = lineLoginSchema.parse(parseBody(event));
+      const { lineUserId } = await lineAuthClient.validateIdToken({
+        tenantId: payload.tenantId,
+        idToken: payload.lineIdToken
       });
-
-      metricEmitter.emit('OneTeam', 'BindingCompleted', 1, 'Count');
-      return jsonResponse(200, {
-        ...bindingResult,
-        auth: tokens
-      }, responseOptions);
+      const binding = await employeeBindingRepository.findActiveByLineUserId(
+        payload.tenantId,
+        lineUserId
+      );
+      if (!binding) {
+        throw new NotFoundError('No active employee binding found for this LINE account');
+      }
+      const tokens = await authSessionService.issueEmployeeSession({
+        tenantId: binding.tenantId,
+        lineUserId: binding.lineUserId,
+        employeeId: binding.employeeId
+      });
+      return jsonResponse(200, tokens, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/public/auth/refresh') {
@@ -629,31 +598,6 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         });
         return jsonResponse(200, profile, responseOptions);
       }
-    }
-
-    const createSelfInviteMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/invites$/);
-    if (method === 'POST' && createSelfInviteMatch) {
-      const principal = await requireEmployeePrincipal({
-        event,
-        authSessionService,
-        requiredTenantId: createSelfInviteMatch[1]
-      });
-      await employeeAccessGovernanceService.requireEmployeePermission({
-        tenantId: principal.tenantId,
-        lineUserId: principal.lineUserId,
-        permission: 'canInvite'
-      });
-
-      const payload = createSelfInviteSchema.parse(parseBody(event));
-      const invitation = await invitationBindingService.createInviteSharePayload({
-        tenantId: principal.tenantId,
-        employeeId: payload.employeeId,
-        email: payload.email,
-        ttlMinutes: payload.ttlMinutes,
-        usageLimit: payload.usageLimit
-      });
-
-      return jsonResponse(201, invitation, responseOptions);
     }
 
     const accessDecisionMatch = path.match(

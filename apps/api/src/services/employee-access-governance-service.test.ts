@@ -7,8 +7,15 @@ import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-bi
 import { InMemoryTenantRepository } from '../repositories/tenant-repository.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
 
+interface PushedMessage {
+  tenantId: string;
+  lineUserId: string;
+  messages: Array<{ type: string; altText?: string; text?: string; contents?: unknown }>;
+}
+
 class CapturingLinePlatformClient implements LinePlatformClient {
   readonly linkedMenus: Array<{ tenantId: string; lineUserId: string; richMenuId: string }> = [];
+  readonly pushedMessages: PushedMessage[] = [];
 
   async validateChannelCredentials(channelId: string, channelSecret: string): Promise<void> {
     void channelId;
@@ -52,7 +59,9 @@ class CapturingLinePlatformClient implements LinePlatformClient {
     void input;
   }
 
-  async pushMessage(): Promise<void> {}
+  async pushMessage(input: PushedMessage): Promise<void> {
+    this.pushedMessages.push(input);
+  }
   async replyMessage(): Promise<void> {}
 }
 
@@ -166,6 +175,13 @@ test('approve access grants permissions and permission guard is enforced', async
   assert.equal(approved.permissions.canRemove, false);
   assert.equal(linePlatformClient.linkedMenus.at(-1)?.richMenuId, 'richmenu-approved-b');
 
+  // Verify push notification sent to employee
+  assert.equal(linePlatformClient.pushedMessages.length, 1);
+  const pushMsg = linePlatformClient.pushedMessages[0];
+  assert.equal(pushMsg.lineUserId, 'U002');
+  const pushJson = JSON.stringify(pushMsg.messages);
+  assert.ok(pushJson.includes('存取申請已通過'), 'Should notify employee of approval');
+
   await service.requireEmployeePermission({
     tenantId: 'tenant_b',
     lineUserId: 'U002',
@@ -237,4 +253,11 @@ test('reject access decision resets permissions and links pending menu', async (
   assert.equal(rejected.permissions.canInvite, false);
   assert.equal(rejected.permissions.canRemove, false);
   assert.equal(linePlatformClient.linkedMenus.at(-1)?.richMenuId, 'richmenu-pending-c');
+
+  // Verify push notification sent to employee
+  assert.equal(linePlatformClient.pushedMessages.length, 1);
+  const pushMsg = linePlatformClient.pushedMessages[0];
+  assert.equal(pushMsg.lineUserId, 'U003');
+  const pushJson = JSON.stringify(pushMsg.messages);
+  assert.ok(pushJson.includes('存取申請未通過'), 'Should notify employee of rejection');
 });

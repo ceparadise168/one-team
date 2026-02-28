@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { invokeLambda } from './testing/lambda-test-client.js';
 
-test('e2e: hr setup to employee access revocation journey', async () => {
+test('e2e: hr setup to employee self-register, approve, digital id, and offboard', async () => {
   const suffix = `${Date.now()}-e2e`;
   const adminHeaders = {
     authorization: 'Bearer admin-token'
@@ -47,61 +47,47 @@ test('e2e: hr setup to employee access revocation journey', async () => {
     }
   });
 
-  const batchInvite = await invokeLambda({
+  // Employee self-registers
+  const selfRegister = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/invites/batch-email`,
-    headers: adminHeaders,
+    path: '/v1/public/self-register',
     body: {
-      ttlMinutes: 60,
-      recipients: [{ email: `staff+${suffix}@acme.test`, employeeId: `EMP-${suffix}` }]
-    }
-  });
-  const batchJobId = (batchInvite.body as { jobId: string }).jobId;
-
-  const dispatched = await invokeLambda({
-    method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/invites/batch-jobs/${batchJobId}/dispatch`,
-    headers: adminHeaders,
-    body: {}
-  });
-  assert.equal(dispatched.statusCode, 200);
-
-  const recipient = (batchInvite.body as {
-    recipients: Array<{
-      status: string;
-      invitationToken: string;
-      oneTimeBindingCode: string;
-      employeeId: string;
-    }>;
-  }).recipients[0];
-  assert.equal(recipient.status, 'QUEUED');
-  assert.equal(
-    (dispatched.body as { recipients: Array<{ status: string }> }).recipients[0].status,
-    'SENT'
-  );
-
-  const bindStart = await invokeLambda({
-    method: 'POST',
-    path: '/v1/public/bind/start',
-    body: {
+      tenantId,
       lineIdToken: `line-id:EMP-U-${suffix}`,
-      invitationToken: recipient.invitationToken
+      employeeId: `EMP-${suffix}`,
+      nickname: `Employee-${suffix}`
     }
   });
 
-  const bindComplete = await invokeLambda({
+  assert.equal(selfRegister.statusCode, 200);
+  assert.equal((selfRegister.body as { accessStatus: string }).accessStatus, 'PENDING');
+
+  // Admin approves the employee
+  const approved = await invokeLambda({
     method: 'POST',
-    path: '/v1/public/bind/complete',
+    path: `/v1/admin/tenants/${tenantId}/employees/EMP-${suffix}/access-decision`,
+    headers: adminHeaders,
     body: {
-      bindSessionToken: (bindStart.body as { bindSessionToken: string }).bindSessionToken,
-      employeeId: recipient.employeeId,
-      bindingCode: recipient.oneTimeBindingCode
+      decision: 'APPROVE',
+      reviewerId: 'hr-admin'
     }
   });
+  assert.equal(approved.statusCode, 200);
+  assert.equal((approved.body as { accessStatus: string }).accessStatus, 'APPROVED');
 
-  assert.equal(bindComplete.statusCode, 200);
-  const accessToken = (bindComplete.body as { auth: { accessToken: string } }).auth.accessToken;
+  // Employee logs in via LINE ID token
+  const login = await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/auth/line-login',
+    body: {
+      tenantId,
+      lineIdToken: `line-id:EMP-U-${suffix}`
+    }
+  });
+  assert.equal(login.statusCode, 200);
+  const accessToken = (login.body as { accessToken: string }).accessToken;
 
+  // Employee gets digital ID
   const digitalId = await invokeLambda({
     method: 'GET',
     path: `/v1/liff/tenants/${tenantId}/me/digital-id`,
@@ -112,6 +98,7 @@ test('e2e: hr setup to employee access revocation journey', async () => {
 
   assert.equal(digitalId.statusCode, 200);
 
+  // Scanner verifies digital ID
   const verifyBefore = await invokeLambda({
     method: 'POST',
     path: '/v1/scanner/verify',
@@ -125,15 +112,17 @@ test('e2e: hr setup to employee access revocation journey', async () => {
 
   assert.equal((verifyBefore.body as { valid: boolean }).valid, true);
 
+  // Admin offboards the employee
   await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/employees/${recipient.employeeId}/offboard`,
+    path: `/v1/admin/tenants/${tenantId}/employees/EMP-${suffix}/offboard`,
     headers: adminHeaders,
     body: {
       actorId: 'hr-admin'
     }
   });
 
+  // Scanner rejects digital ID after offboard
   const verifyAfter = await invokeLambda({
     method: 'POST',
     path: '/v1/scanner/verify',

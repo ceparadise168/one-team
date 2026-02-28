@@ -41,6 +41,7 @@ async function createService() {
     auditEventRepo,
     linePlatformClient,
     accessGovernanceService,
+    tenantRepo,
     { now: () => new Date('2026-02-28T00:00:00.000Z') }
   );
 
@@ -321,5 +322,263 @@ describe('WebhookEventService — admin features', () => {
     assert.ok(reply);
     const json = JSON.stringify(reply.messages);
     assert.ok(json.includes('您沒有管理權限'));
+  });
+
+  it('admin list shows nickname when available', async () => {
+    const ctx = await setupAdmin();
+
+    // Add a pending employee with nickname
+    await ctx.employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E004',
+      lineUserId: 'U-e004',
+      boundAt: '2026-02-27T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING',
+      nickname: '小明'
+    });
+
+    await ctx.service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-list-nick',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-admin' },
+      replyToken: 'reply-list-nick',
+      postback: { data: 'action=admin_list' }
+    }]);
+
+    const reply = ctx.linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-list-nick');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('小明'), 'Should show nickname in admin list');
+    assert.ok(json.includes('E004'));
+  });
+});
+
+describe('WebhookEventService — follow + request_access', () => {
+  it('follow event sends welcome Flex Message and links pending rich menu', async () => {
+    const { service, linePlatformClient } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'follow',
+      webhookEventId: 'evt-follow-1',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-new' },
+      replyToken: 'reply-follow-1'
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-follow-1');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('歡迎使用 ONE TEAM'), 'Should reply with welcome Flex Message');
+    assert.ok(json.includes('ACME'), 'Should include tenant name');
+  });
+
+  it('follow event links approved rich menu for already-approved user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-existing',
+      lineUserId: 'U-approved',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'APPROVED'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'follow',
+      webhookEventId: 'evt-follow-approved',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-approved' },
+      replyToken: 'reply-follow-approved'
+    }]);
+
+    // Should still send welcome message
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-follow-approved');
+    assert.ok(reply);
+  });
+
+  it('request_access postback sends LIFF registration link for new user', async () => {
+    const { service, linePlatformClient, tenantRepo } = await createService();
+
+    // Ensure tenant has liffId
+    const tenant = await tenantRepo.findById('tenant-1');
+    assert.ok(tenant);
+    tenant.line.resources.liffId = 'liff-abc123';
+    await tenantRepo.save(tenant);
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-request-1',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-new' },
+      replyToken: 'reply-request-1',
+      postback: { data: 'action=request_access' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-1');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('員工註冊'), 'Should show registration instruction');
+    assert.ok(json.includes('liff-abc123'), 'Should include LIFF ID in URL');
+    assert.ok(json.includes('tenant-1'), 'Should include tenantId in URL');
+  });
+
+  it('request_access returns "already approved" for approved user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-approved',
+      lineUserId: 'U-approved',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'APPROVED'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-request-approved',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-approved' },
+      replyToken: 'reply-request-approved',
+      postback: { data: 'action=request_access' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-approved');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('您已開通'));
+  });
+
+  it('request_access returns "pending" for user with pending status', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-pending',
+      lineUserId: 'U-pending',
+      boundAt: '2026-02-20T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-request-pending',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-pending' },
+      replyToken: 'reply-request-pending',
+      postback: { data: 'action=request_access' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-pending');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('審核中'));
+  });
+
+  it('request_access allows re-registration for rejected user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo, tenantRepo } = await createService();
+
+    const tenant = await tenantRepo.findById('tenant-1');
+    assert.ok(tenant);
+    tenant.line.resources.liffId = 'liff-abc123';
+    await tenantRepo.save(tenant);
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-rejected',
+      lineUserId: 'U-rejected',
+      boundAt: '2026-02-15T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'REJECTED'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-request-rejected',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-rejected' },
+      replyToken: 'reply-request-rejected',
+      postback: { data: 'action=request_access' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-request-rejected');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('員工註冊'), 'Rejected user should see registration link');
+  });
+
+  it('message "申請開通" routes to request_access handler', async () => {
+    const { service, linePlatformClient, tenantRepo } = await createService();
+
+    const tenant = await tenantRepo.findById('tenant-1');
+    assert.ok(tenant);
+    tenant.line.resources.liffId = 'liff-msg-test';
+    await tenantRepo.save(tenant);
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-msg-1',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-msg' },
+      replyToken: 'reply-msg-1',
+      message: { type: 'text', id: 'msg-1', text: '申請開通' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-msg-1');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('員工註冊'), 'Text message "申請開通" should trigger registration');
+  });
+
+  it('message "員工服務" routes to services menu', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    // Need an approved user for services menu
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-svc',
+      lineUserId: 'U-svc',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'APPROVED',
+      permissions: { canInvite: false, canRemove: false }
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-msg-svc',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-svc' },
+      replyToken: 'reply-msg-svc',
+      message: { type: 'text', id: 'msg-svc', text: '員工服務' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-msg-svc');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('員工證'), 'Should show services menu');
+  });
+
+  it('request_access shows error when liffId not configured', async () => {
+    const { service, linePlatformClient } = await createService();
+    // Default tenant has no liffId set
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-no-liff',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-new' },
+      replyToken: 'reply-no-liff',
+      postback: { data: 'action=request_access' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-no-liff');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('系統尚未設定完成'));
   });
 });

@@ -240,6 +240,7 @@ function buildStatRow(label: string, count: number, color: string): Record<strin
 
 export interface PendingEmployeeInfo {
   employeeId: string;
+  nickname?: string;
   boundAt: string;
 }
 
@@ -278,7 +279,7 @@ export function buildPendingEmployeesCarouselFlexMessage(
       contents: [
         {
           type: 'text',
-          text: `員工 ${emp.employeeId}`,
+          text: emp.nickname ? `${emp.nickname} (${emp.employeeId})` : `員工 ${emp.employeeId}`,
           weight: 'bold',
           size: 'lg'
         },
@@ -391,6 +392,133 @@ export function buildAdminActionResultFlexMessage(input: {
             style: 'secondary'
           }
         ]
+      }
+    }
+  };
+}
+
+export function buildRegistrationInstructionFlexMessage(input: {
+  tenantName: string;
+  liffRegisterUrl: string;
+}): LineMessage {
+  return {
+    type: 'flex',
+    altText: '員工註冊 — 請填寫資料',
+    contents: {
+      type: 'bubble',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '員工註冊',
+            weight: 'bold',
+            size: 'xl',
+            color: '#1a73e8'
+          },
+          {
+            type: 'text',
+            text: `請點選下方按鈕，填寫您在 ${input.tenantName} 的員工資料以申請開通。`,
+            wrap: true,
+            margin: 'md',
+            color: '#666666'
+          }
+        ]
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'uri',
+              label: '填寫員工資料',
+              uri: input.liffRegisterUrl
+            },
+            style: 'primary',
+            color: '#1a73e8'
+          }
+        ]
+      }
+    }
+  };
+}
+
+export function buildNewAccessRequestNotificationFlexMessage(input: {
+  employeeId: string;
+  nickname: string;
+  requestedAt: string;
+}): LineMessage {
+  return {
+    type: 'flex',
+    altText: `新員工 ${input.nickname} (${input.employeeId}) 申請開通`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '新員工申請開通',
+            weight: 'bold',
+            size: 'lg',
+            color: '#e67e22'
+          }
+        ]
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: `${input.nickname} (${input.employeeId})`,
+            weight: 'bold',
+            size: 'md'
+          },
+          {
+            type: 'text',
+            text: `申請時間：${input.requestedAt.slice(0, 16).replace('T', ' ')}`,
+            margin: 'sm',
+            size: 'sm',
+            color: '#999999'
+          }
+        ]
+      },
+      footer: {
+        type: 'box',
+        layout: 'horizontal',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'postback',
+              label: '✅ 核准',
+              data: `action=admin_approve&eid=${input.employeeId}`,
+              displayText: `核准 ${input.employeeId}`
+            },
+            style: 'primary',
+            color: '#27ae60',
+            flex: 1
+          },
+          {
+            type: 'button',
+            action: {
+              type: 'postback',
+              label: '❌ 拒絕',
+              data: `action=admin_reject&eid=${input.employeeId}`,
+              displayText: `拒絕 ${input.employeeId}`
+            },
+            style: 'primary',
+            color: '#e74c3c',
+            flex: 1,
+            margin: 'sm'
+          }
+        ],
+        spacing: 'sm'
       }
     }
   };

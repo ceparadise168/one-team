@@ -11,6 +11,7 @@ import {
   getTenantPendingRichMenuId
 } from '../domain/tenant.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
+import { buildAccessConfirmationFlexMessage } from '../line/flex-message-templates.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';
 import { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { TenantRepository } from '../repositories/tenant-repository.js';
@@ -104,6 +105,7 @@ export class EmployeeAccessGovernanceService {
 
     await this.employeeBindingRepository.upsert(binding);
     await this.relinkForAccessStatus(binding);
+    await this.notifyEmployeeOfDecision(binding);
 
     return this.toProfile(binding);
   }
@@ -127,6 +129,23 @@ export class EmployeeAccessGovernanceService {
     }
 
     return this.toProfile(binding);
+  }
+
+  private async notifyEmployeeOfDecision(binding: EmployeeBindingAccessProfile): Promise<void> {
+    if (binding.accessStatus !== 'APPROVED' && binding.accessStatus !== 'REJECTED') return;
+
+    const tenant = await this.tenantRepository.findById(binding.tenantId);
+    const tenantName = tenant?.tenantName ?? 'ONE TEAM';
+
+    try {
+      await this.linePlatformClient.pushMessage({
+        tenantId: binding.tenantId,
+        lineUserId: binding.lineUserId,
+        messages: [buildAccessConfirmationFlexMessage(binding.accessStatus, tenantName)]
+      });
+    } catch {
+      // Best-effort notification — don't fail the decision if push fails
+    }
   }
 
   private async relinkForAccessStatus(binding: EmployeeBindingAccessProfile): Promise<void> {

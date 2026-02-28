@@ -127,7 +127,7 @@ test('integration: connect line rejects partial login credential payload', async
   assert.equal(connected.statusCode, 400);
 });
 
-test('integration: bind + digital id + offboard pipeline', async () => {
+test('integration: self-register + approve + digital id + offboard pipeline', async () => {
   const suffix = `${Date.now()}-pipeline`;
 
   const created = await invokeLambda({
@@ -142,67 +142,48 @@ test('integration: bind + digital id + offboard pipeline', async () => {
 
   const tenantId = (created.body as { tenantId: string }).tenantId;
 
-  const batch = await invokeLambda({
+  // Self-register
+  const registered = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/invites/batch-email`,
-    headers: adminHeaders,
+    path: '/v1/public/self-register',
     body: {
-      ttlMinutes: 60,
-      recipients: [{ email: `user+${suffix}@acme.test`, employeeId: `E-${suffix}` }]
-    }
-  });
-
-  assert.equal(batch.statusCode, 202);
-  const batchJobId = (batch.body as { jobId: string }).jobId;
-
-  const firstRecipient = (batch.body as {
-    recipients: Array<{
-      status: string;
-      invitationToken: string;
-      oneTimeBindingCode: string;
-      employeeId: string;
-    }>;
-  }).recipients[0];
-  assert.equal(firstRecipient.status, 'QUEUED');
-
-  const dispatched = await invokeLambda({
-    method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/invites/batch-jobs/${batchJobId}/dispatch`,
-    headers: adminHeaders,
-    body: {}
-  });
-  assert.equal(dispatched.statusCode, 200);
-  assert.equal(
-    (dispatched.body as { recipients: Array<{ status: string }> }).recipients[0].status,
-    'SENT'
-  );
-
-  const start = await invokeLambda({
-    method: 'POST',
-    path: '/v1/public/bind/start',
-    body: {
+      tenantId,
       lineIdToken: `line-id:U-${suffix}`,
-      invitationToken: firstRecipient.invitationToken
+      employeeId: `E-${suffix}`,
+      nickname: `Employee-${suffix}`
     }
   });
 
-  assert.equal(start.statusCode, 200);
-  const bindSessionToken = (start.body as { bindSessionToken: string }).bindSessionToken;
+  assert.equal(registered.statusCode, 200);
+  assert.equal((registered.body as { accessStatus: string }).accessStatus, 'PENDING');
 
-  const complete = await invokeLambda({
+  // Admin approves
+  const approved = await invokeLambda({
     method: 'POST',
-    path: '/v1/public/bind/complete',
+    path: `/v1/admin/tenants/${tenantId}/employees/E-${suffix}/access-decision`,
+    headers: adminHeaders,
     body: {
-      bindSessionToken,
-      employeeId: firstRecipient.employeeId,
-      bindingCode: firstRecipient.oneTimeBindingCode
+      decision: 'APPROVE',
+      reviewerId: 'hr-admin'
     }
   });
+  assert.equal(approved.statusCode, 200);
+  assert.equal((approved.body as { accessStatus: string }).accessStatus, 'APPROVED');
 
-  assert.equal(complete.statusCode, 200);
+  // Login via LINE ID token to get access token
+  const login = await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/auth/line-login',
+    body: {
+      tenantId,
+      lineIdToken: `line-id:U-${suffix}`
+    }
+  });
+  assert.equal(login.statusCode, 200);
+  const accessToken = (login.body as { accessToken: string }).accessToken;
+  assert.ok(accessToken);
 
-  const accessToken = (complete.body as { auth: { accessToken: string } }).auth.accessToken;
-
+  // Get digital ID
   const digitalId = await invokeLambda({
     method: 'GET',
     path: `/v1/liff/tenants/${tenantId}/me/digital-id`,
@@ -214,6 +195,7 @@ test('integration: bind + digital id + offboard pipeline', async () => {
   assert.equal(digitalId.statusCode, 200);
   const payload = (digitalId.body as { payload: string }).payload;
 
+  // Verify digital ID
   const verifiedBeforeOffboard = await invokeLambda({
     method: 'POST',
     path: '/v1/scanner/verify',
@@ -228,9 +210,10 @@ test('integration: bind + digital id + offboard pipeline', async () => {
   assert.equal(verifiedBeforeOffboard.statusCode, 200);
   assert.equal((verifiedBeforeOffboard.body as { valid: boolean }).valid, true);
 
+  // Offboard
   const offboard = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/employees/${firstRecipient.employeeId}/offboard`,
+    path: `/v1/admin/tenants/${tenantId}/employees/E-${suffix}/offboard`,
     headers: adminHeaders,
     body: {
       actorId: 'hr-admin'
@@ -239,6 +222,7 @@ test('integration: bind + digital id + offboard pipeline', async () => {
 
   assert.equal(offboard.statusCode, 200);
 
+  // Verify digital ID is invalid after offboard
   const verifiedAfterOffboard = await invokeLambda({
     method: 'POST',
     path: '/v1/scanner/verify',
@@ -254,7 +238,7 @@ test('integration: bind + digital id + offboard pipeline', async () => {
   assert.equal((verifiedAfterOffboard.body as { valid: boolean }).valid, false);
 });
 
-test('integration: access request approval enables delegated invite/offboard permissions', async () => {
+test('integration: access request approval enables delegated offboard permissions', async () => {
   const suffix = `${Date.now()}-delegated`;
 
   const created = await invokeLambda({
@@ -269,13 +253,15 @@ test('integration: access request approval enables delegated invite/offboard per
   assert.equal(created.statusCode, 201);
   const tenantId = (created.body as { tenantId: string }).tenantId;
 
-  const manager = await inviteDispatchAndBind({
+  // Register manager via self-register
+  const manager = await selfRegisterApproveAndLogin({
     tenantId,
     employeeId: `E-MGR-${suffix}`,
-    email: `mgr+${suffix}@acme.test`,
-    lineIdToken: `line-id:U-MGR-${suffix}`
+    lineIdToken: `line-id:U-MGR-${suffix}`,
+    nickname: `Manager-${suffix}`
   });
 
+  // Manager requests access
   const request = await invokeLambda({
     method: 'POST',
     path: `/v1/liff/tenants/${tenantId}/me/access-request`,
@@ -285,22 +271,9 @@ test('integration: access request approval enables delegated invite/offboard per
     body: {}
   });
   assert.equal(request.statusCode, 200);
-  assert.equal((request.body as { accessStatus: string }).accessStatus, 'PENDING');
 
-  const forbiddenInvite = await invokeLambda({
-    method: 'POST',
-    path: `/v1/liff/tenants/${tenantId}/me/invites`,
-    headers: {
-      authorization: `Bearer ${manager.accessToken}`
-    },
-    body: {
-      ttlMinutes: 30,
-      usageLimit: 1
-    }
-  });
-  assert.equal(forbiddenInvite.statusCode, 403);
-
-  const approvedInviteOnly = await invokeLambda({
+  // Approve manager without canRemove
+  const approvedNoRemove = await invokeLambda({
     method: 'POST',
     path: `/v1/admin/tenants/${tenantId}/employees/${manager.employeeId}/access-decision`,
     headers: adminHeaders,
@@ -313,58 +286,20 @@ test('integration: access request approval enables delegated invite/offboard per
       }
     }
   });
-  assert.equal(approvedInviteOnly.statusCode, 200);
-  assert.equal((approvedInviteOnly.body as { accessStatus: string }).accessStatus, 'APPROVED');
+  assert.equal(approvedNoRemove.statusCode, 200);
 
-  const delegatedInvite = await invokeLambda({
-    method: 'POST',
-    path: `/v1/liff/tenants/${tenantId}/me/invites`,
-    headers: {
-      authorization: `Bearer ${manager.accessToken}`
-    },
-    body: {
-      ttlMinutes: 30,
-      usageLimit: 1,
-      employeeId: `E-WORK-${suffix}`,
-      email: `worker+${suffix}@acme.test`
-    }
+  // Register a worker via self-register
+  const worker = await selfRegisterApproveAndLogin({
+    tenantId,
+    employeeId: `E-WORK-${suffix}`,
+    lineIdToken: `line-id:U-WORK-${suffix}`,
+    nickname: `Worker-${suffix}`
   });
-  assert.equal(delegatedInvite.statusCode, 201);
-  const delegatedInviteBody = delegatedInvite.body as {
-    invitationUrl: string;
-    invitationToken: string;
-    oneTimeBindingCode: string;
-    employeeId: string;
-    qrPayload: string;
-  };
-  assert.ok(delegatedInviteBody.invitationUrl);
-  assert.ok(delegatedInviteBody.qrPayload);
 
-  const workerBindStart = await invokeLambda({
-    method: 'POST',
-    path: '/v1/public/bind/start',
-    body: {
-      lineIdToken: `line-id:U-WORK-${suffix}`,
-      invitationToken: delegatedInviteBody.invitationToken
-    }
-  });
-  assert.equal(workerBindStart.statusCode, 200);
-
-  const workerBindComplete = await invokeLambda({
-    method: 'POST',
-    path: '/v1/public/bind/complete',
-    body: {
-      bindSessionToken: (workerBindStart.body as { bindSessionToken: string }).bindSessionToken,
-      employeeId: delegatedInviteBody.employeeId,
-      bindingCode: delegatedInviteBody.oneTimeBindingCode
-    }
-  });
-  assert.equal(workerBindComplete.statusCode, 200);
-  const workerEmployeeId = delegatedInviteBody.employeeId;
-
+  // Manager tries to offboard worker (should be forbidden — no canRemove)
   const forbiddenOffboard = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/employees/${workerEmployeeId}/offboard`,
+    path: `/v1/admin/tenants/${tenantId}/employees/${worker.employeeId}/offboard`,
     headers: {
       authorization: `Bearer ${manager.accessToken}`
     },
@@ -372,6 +307,7 @@ test('integration: access request approval enables delegated invite/offboard per
   });
   assert.equal(forbiddenOffboard.statusCode, 403);
 
+  // Approve manager with canRemove
   const approvedRemover = await invokeLambda({
     method: 'POST',
     path: `/v1/admin/tenants/${tenantId}/employees/${manager.employeeId}/access-decision`,
@@ -387,9 +323,10 @@ test('integration: access request approval enables delegated invite/offboard per
   });
   assert.equal(approvedRemover.statusCode, 200);
 
+  // Manager offboards worker (should succeed now)
   const delegatedOffboard = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${tenantId}/employees/${workerEmployeeId}/offboard`,
+    path: `/v1/admin/tenants/${tenantId}/employees/${worker.employeeId}/offboard`,
     headers: {
       authorization: `Bearer ${manager.accessToken}`
     },
@@ -530,69 +467,117 @@ test('integration: line webhook accepts valid signature and returns event count'
   assert.equal((webhook.body as { receivedEvents: number }).receivedEvents, 2);
 });
 
-async function inviteDispatchAndBind(input: {
+test('integration: admin employees list with status filter', async () => {
+  const suffix = `${Date.now()}-emplist`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`
+    }
+  });
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  // Register two employees
+  await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/self-register',
+    body: {
+      tenantId,
+      lineIdToken: `line-id:U-A-${suffix}`,
+      employeeId: `E-A-${suffix}`,
+      nickname: '員工A'
+    }
+  });
+
+  await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/self-register',
+    body: {
+      tenantId,
+      lineIdToken: `line-id:U-B-${suffix}`,
+      employeeId: `E-B-${suffix}`,
+      nickname: '員工B'
+    }
+  });
+
+  // Approve one
+  await invokeLambda({
+    method: 'POST',
+    path: `/v1/admin/tenants/${tenantId}/employees/E-A-${suffix}/access-decision`,
+    headers: adminHeaders,
+    body: { decision: 'APPROVE', reviewerId: 'hr-admin' }
+  });
+
+  // List all
+  const all = await invokeLambda({
+    method: 'GET',
+    path: `/v1/admin/tenants/${tenantId}/employees`,
+    headers: adminHeaders
+  });
+  assert.equal(all.statusCode, 200);
+  const allEmployees = (all.body as { employees: unknown[] }).employees;
+  assert.equal(allEmployees.length, 2);
+
+  // List pending only
+  const pending = await invokeLambda({
+    method: 'GET',
+    path: `/v1/admin/tenants/${tenantId}/employees?status=PENDING`,
+    headers: adminHeaders
+  });
+  assert.equal(pending.statusCode, 200);
+  const pendingEmployees = (pending.body as { employees: Array<{ employeeId: string }> }).employees;
+  assert.equal(pendingEmployees.length, 1);
+  assert.ok(pendingEmployees[0].employeeId.includes('E-B'));
+});
+
+async function selfRegisterApproveAndLogin(input: {
   tenantId: string;
   employeeId: string;
-  email: string;
   lineIdToken: string;
+  nickname: string;
 }): Promise<{
   employeeId: string;
   accessToken: string;
 }> {
-  const batch = await invokeLambda({
+  const registered = await invokeLambda({
     method: 'POST',
-    path: `/v1/admin/tenants/${input.tenantId}/invites/batch-email`,
-    headers: adminHeaders,
+    path: '/v1/public/self-register',
     body: {
-      ttlMinutes: 60,
-      recipients: [{ email: input.email, employeeId: input.employeeId }]
-    }
-  });
-  assert.equal(batch.statusCode, 202);
-
-  const batchBody = batch.body as {
-    jobId: string;
-    recipients: Array<{
-      invitationToken: string;
-      oneTimeBindingCode: string;
-      employeeId: string;
-      status: string;
-    }>;
-  };
-  const recipient = batchBody.recipients[0];
-  assert.equal(recipient.status, 'QUEUED');
-
-  const dispatched = await invokeLambda({
-    method: 'POST',
-    path: `/v1/admin/tenants/${input.tenantId}/invites/batch-jobs/${batchBody.jobId}/dispatch`,
-    headers: adminHeaders,
-    body: {}
-  });
-  assert.equal(dispatched.statusCode, 200);
-
-  const start = await invokeLambda({
-    method: 'POST',
-    path: '/v1/public/bind/start',
-    body: {
+      tenantId: input.tenantId,
       lineIdToken: input.lineIdToken,
-      invitationToken: recipient.invitationToken
+      employeeId: input.employeeId,
+      nickname: input.nickname
     }
   });
-  assert.equal(start.statusCode, 200);
+  assert.equal(registered.statusCode, 200);
 
-  const complete = await invokeLambda({
+  const approved = await invokeLambda({
     method: 'POST',
-    path: '/v1/public/bind/complete',
+    path: `/v1/admin/tenants/${input.tenantId}/employees/${input.employeeId}/access-decision`,
+    headers: adminHeaders,
     body: {
-      bindSessionToken: (start.body as { bindSessionToken: string }).bindSessionToken,
-      employeeId: recipient.employeeId,
-      bindingCode: recipient.oneTimeBindingCode
+      decision: 'APPROVE',
+      reviewerId: 'hr-admin'
     }
   });
-  assert.equal(complete.statusCode, 200);
+  assert.equal(approved.statusCode, 200);
+
+  const login = await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/auth/line-login',
+    body: {
+      tenantId: input.tenantId,
+      lineIdToken: input.lineIdToken
+    }
+  });
+  assert.equal(login.statusCode, 200);
 
   return {
-    employeeId: recipient.employeeId,
-    accessToken: (complete.body as { auth: { accessToken: string } }).auth.accessToken
+    employeeId: input.employeeId,
+    accessToken: (login.body as { accessToken: string }).accessToken
   };
 }

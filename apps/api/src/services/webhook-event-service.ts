@@ -1,13 +1,21 @@
 import { LineWebhookEvent, parsePostbackData } from '../domain/webhook.js';
 import {
+  getTenantPendingRichMenuId,
+  getTenantApprovedRichMenuId
+} from '../domain/tenant.js';
+import {
+  buildWelcomeFlexMessage,
   buildServicesMenuFlexMessage,
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
-  buildAdminActionResultFlexMessage
+  buildAdminActionResultFlexMessage,
+  buildRegistrationInstructionFlexMessage,
+  buildAccessConfirmationFlexMessage
 } from '../line/flex-message-templates.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';
 import { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { AuditEventRepository } from '../repositories/offboarding-repository.js';
+import { TenantRepository } from '../repositories/tenant-repository.js';
 import { WebhookEventRepository } from '../repositories/webhook-event-repository.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +31,7 @@ export class WebhookEventService {
     private readonly auditEventRepository: AuditEventRepository,
     private readonly linePlatformClient: LinePlatformClient,
     private readonly accessGovernanceService: EmployeeAccessGovernanceService,
+    private readonly tenantRepository: TenantRepository,
     private readonly options: WebhookEventServiceOptions = { now: () => new Date() }
   ) {}
 
@@ -62,6 +71,9 @@ export class WebhookEventService {
       case 'unfollow':
         await this.handleUnfollow(tenantId, event);
         break;
+      case 'message':
+        await this.handleMessage(tenantId, event);
+        break;
       case 'postback':
         await this.handlePostback(tenantId, event);
         break;
@@ -74,17 +86,42 @@ export class WebhookEventService {
     const lineUserId = event.source.userId;
     if (!lineUserId) return;
 
+    const tenant = await this.tenantRepository.findById(tenantId);
+    const resources = tenant?.line.resources ?? {};
+    const existingBinding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
+
+    if (existingBinding?.accessStatus === 'APPROVED') {
+      const richMenuId = getTenantApprovedRichMenuId(resources, tenantId);
+      await this.linePlatformClient.linkRichMenu({ tenantId, lineUserId, richMenuId });
+    } else {
+      const richMenuId = getTenantPendingRichMenuId(resources, tenantId);
+      await this.linePlatformClient.linkRichMenu({ tenantId, lineUserId, richMenuId });
+    }
+
     if (event.replyToken) {
+      const tenantName = tenant?.tenantName ?? 'ONE TEAM';
       await this.linePlatformClient.replyMessage({
         tenantId,
         replyToken: event.replyToken,
-        messages: [
-          {
-            type: 'text',
-            text: '歡迎加入！請點選下方選單開始綁定您的員工身份。'
-          }
-        ]
+        messages: [buildWelcomeFlexMessage(tenantName)]
       });
+    }
+  }
+
+  private async handleMessage(tenantId: string, event: LineWebhookEvent): Promise<void> {
+    if (event.message?.type !== 'text' || !event.message.text) return;
+
+    const text = event.message.text.trim();
+
+    switch (text) {
+      case '申請開通':
+        await this.handleRequestAccess(tenantId, event);
+        return;
+      case '員工服務':
+        await this.handleServicesMenu(tenantId, event);
+        return;
+      default:
+        break;
     }
   }
 
@@ -117,6 +154,9 @@ export class WebhookEventService {
     const parsed = parsePostbackData(event.postback.data);
 
     switch (parsed.action) {
+      case 'request_access':
+        await this.handleRequestAccess(tenantId, event);
+        return;
       case 'services_menu':
         await this.handleServicesMenu(tenantId, event);
         return;
@@ -160,6 +200,53 @@ export class WebhookEventService {
       tenantId,
       replyToken: event.replyToken,
       messages: [buildServicesMenuFlexMessage({ isAdmin })]
+    });
+  }
+
+  private async handleRequestAccess(tenantId: string, event: LineWebhookEvent): Promise<void> {
+    const lineUserId = event.source.userId;
+    if (!lineUserId || !event.replyToken) return;
+
+    const existingBinding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
+
+    if (existingBinding) {
+      if (existingBinding.accessStatus === 'APPROVED') {
+        await this.linePlatformClient.replyMessage({
+          tenantId,
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: '您已開通，可從下方選單使用員工服務。' }]
+        });
+        return;
+      }
+      if (existingBinding.accessStatus === 'PENDING') {
+        await this.linePlatformClient.replyMessage({
+          tenantId,
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: '您的申請正在審核中，請耐心等待。' }]
+        });
+        return;
+      }
+      // REJECTED — allow re-registration
+    }
+
+    const tenant = await this.tenantRepository.findById(tenantId);
+    const tenantName = tenant?.tenantName ?? 'ONE TEAM';
+    const liffId = tenant?.line.resources.liffId;
+
+    if (!liffId) {
+      await this.linePlatformClient.replyMessage({
+        tenantId,
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: '系統尚未設定完成，請聯絡管理員。' }]
+      });
+      return;
+    }
+
+    const liffRegisterUrl = `https://liff.line.me/${liffId}/register?tenantId=${tenantId}`;
+    await this.linePlatformClient.replyMessage({
+      tenantId,
+      replyToken: event.replyToken,
+      messages: [buildRegistrationInstructionFlexMessage({ tenantName, liffRegisterUrl })]
     });
   }
 
@@ -215,7 +302,7 @@ export class WebhookEventService {
     const pendingBindings = bindings
       .filter(b => (b.accessStatus ?? 'PENDING') === 'PENDING' && b.employmentStatus === 'ACTIVE')
       .slice(0, 10)
-      .map(b => ({ employeeId: b.employeeId, boundAt: b.boundAt }));
+      .map(b => ({ employeeId: b.employeeId, nickname: b.nickname, boundAt: b.boundAt }));
 
     await this.linePlatformClient.replyMessage({
       tenantId,

@@ -466,6 +466,78 @@ export function buildNewAccessRequestNotificationFlexMessage(input: {
   };
 }
 
+export function buildDigitalIdFlexMessage(employeeId: string): LineMessage {
+  const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(employeeId)}&size=300&margin=1`;
+
+  return {
+    type: 'flex',
+    altText: `員工證 — ${employeeId}`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '數位員工證',
+            weight: 'bold',
+            size: 'xl',
+            align: 'center',
+            color: '#1a73e8'
+          }
+        ],
+        paddingBottom: '0px'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'image',
+            url: qrUrl,
+            size: 'lg',
+            aspectRatio: '1:1',
+            aspectMode: 'fit'
+          },
+          {
+            type: 'separator',
+            margin: 'lg'
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '工號',
+                size: 'sm',
+                color: '#999999',
+                align: 'center'
+              },
+              {
+                type: 'text',
+                text: employeeId,
+                weight: 'bold',
+                size: 'xxl',
+                align: 'center',
+                color: '#333333',
+                margin: 'sm'
+              }
+            ],
+            margin: 'lg'
+          }
+        ]
+      },
+      styles: {
+        header: {
+          backgroundColor: '#F5F7FA'
+        }
+      }
+    }
+  };
+}
+
 export function buildServicesMenuFlexMessage(options?: { isAdmin?: boolean }): LineMessage {
   const bubbles: unknown[] = [
     {

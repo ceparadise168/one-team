@@ -7,6 +7,7 @@ import {
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
   buildAdminActionResultFlexMessage,
+  buildDigitalIdFlexMessage,
   buildServicesMenuFlexMessage
 } from './flex-message-templates.js';
 
@@ -102,6 +103,25 @@ describe('buildAdminActionResultFlexMessage', () => {
     const json = JSON.stringify(msg.contents);
     assert.ok(json.includes('已拒絕'));
     assert.ok(json.includes('E002'));
+  });
+});
+
+describe('buildDigitalIdFlexMessage', () => {
+  it('returns flex message with QR code and employee ID', () => {
+    const msg = buildDigitalIdFlexMessage('E12345');
+    assert.equal(msg.type, 'flex');
+    assert.ok(msg.altText?.includes('E12345'));
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('數位員工證'));
+    assert.ok(json.includes('E12345'));
+    assert.ok(json.includes('quickchart.io/qr'));
+    assert.ok(json.includes('image'));
+  });
+
+  it('URL-encodes the employee ID in QR code URL', () => {
+    const msg = buildDigitalIdFlexMessage('E 001');
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('E%20001'), 'Should URL-encode employee ID');
   });
 });
 

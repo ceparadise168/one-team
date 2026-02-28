@@ -6,6 +6,7 @@ import {
 import {
   buildWelcomeFlexMessage,
   buildServicesMenuFlexMessage,
+  buildDigitalIdFlexMessage,
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
   buildAdminActionResultFlexMessage,
@@ -92,8 +93,17 @@ export class WebhookEventService {
     const resources = tenant?.line.resources ?? {};
     const existingBinding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
 
+    // Clear lineDisconnectedAt on re-follow
+    if (existingBinding?.lineDisconnectedAt) {
+      existingBinding.lineDisconnectedAt = undefined;
+      await this.employeeBindingRepository.upsert(existingBinding);
+    }
+
     if (existingBinding?.accessStatus === 'APPROVED') {
       const richMenuId = getTenantApprovedRichMenuId(resources, tenantId);
+      await this.linePlatformClient.linkRichMenu({ tenantId, lineUserId, richMenuId });
+    } else if (existingBinding?.accessStatus === 'PENDING') {
+      const richMenuId = getTenantPendingRichMenuId(resources, tenantId);
       await this.linePlatformClient.linkRichMenu({ tenantId, lineUserId, richMenuId });
     } else {
       const richMenuId = getTenantPendingRichMenuId(resources, tenantId);
@@ -136,6 +146,12 @@ export class WebhookEventService {
         const employeeIdMatch = text.match(/^工號\s*(.+)$/);
         const employeeId = employeeIdMatch ? employeeIdMatch[1].trim() : text;
         await this.handleInlineRegistration(tenantId, event, employeeId);
+      } else if (event.replyToken) {
+        await this.linePlatformClient.replyMessage({
+          tenantId,
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: `您的 LINE 已綁定在工號 ${existing.employeeId} 上，無法再次綁定其他工號。` }]
+        });
       }
     }
   }
@@ -206,6 +222,9 @@ export class WebhookEventService {
       case 'start_bind':
         await this.handleRequestAccess(tenantId, event);
         return;
+      case 'digital_id':
+        await this.handleDigitalId(tenantId, event);
+        return;
       case 'services_menu':
         await this.handleServicesMenu(tenantId, event);
         return;
@@ -249,6 +268,28 @@ export class WebhookEventService {
       tenantId,
       replyToken: event.replyToken,
       messages: [buildServicesMenuFlexMessage({ isAdmin })]
+    });
+  }
+
+  private async handleDigitalId(tenantId: string, event: LineWebhookEvent): Promise<void> {
+    const lineUserId = event.source.userId;
+    if (!lineUserId || !event.replyToken) return;
+
+    const binding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
+
+    if (!binding || binding.accessStatus !== 'APPROVED') {
+      await this.linePlatformClient.replyMessage({
+        tenantId,
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: '您尚未開通員工身份，無法查看員工證。' }]
+      });
+      return;
+    }
+
+    await this.linePlatformClient.replyMessage({
+      tenantId,
+      replyToken: event.replyToken,
+      messages: [buildDigitalIdFlexMessage(binding.employeeId)]
     });
   }
 

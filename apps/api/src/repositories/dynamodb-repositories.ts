@@ -471,13 +471,33 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
   }
 
   async findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null> {
-    const record = await this.findByLineUserId(tenantId, lineUserId);
+    // A LINE user may have multiple bindings (e.g. re-registered with different employee IDs).
+    // Query all and pick the best active one: APPROVED > PENDING > REJECTED.
+    const response = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: GSI_LINE_USER,
+        KeyConditionExpression: 'tenant_id = :tenantId AND line_user_id = :lineUserId',
+        ExpressionAttributeValues: {
+          ':tenantId': tenantId,
+          ':lineUserId': lineUserId
+        }
+      })
+    );
 
-    if (!record || record.employmentStatus !== 'ACTIVE') {
-      return null;
-    }
+    const items = (response.Items ?? []) as Record<string, unknown>[];
+    const records = items
+      .map(item => stripMetadata<EmployeeBindingRecord>(item))
+      .filter((r): r is EmployeeBindingRecord => r !== null)
+      .map(normalizeEmployeeBindingRecord)
+      .filter(r => r.employmentStatus === 'ACTIVE');
 
-    return record;
+    if (records.length === 0) return null;
+
+    const priority: Record<string, number> = { APPROVED: 0, PENDING: 1, REJECTED: 2 };
+    records.sort((a, b) => (priority[a.accessStatus ?? 'PENDING'] ?? 9) - (priority[b.accessStatus ?? 'PENDING'] ?? 9));
+
+    return records[0];
   }
 
   async findActiveByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null> {

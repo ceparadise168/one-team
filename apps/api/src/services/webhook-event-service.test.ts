@@ -367,6 +367,82 @@ describe('WebhookEventService — admin features', () => {
   });
 });
 
+describe('WebhookEventService — digital_id', () => {
+  it('digital_id postback returns flex message with QR code for approved user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: '29793',
+      lineUserId: 'U-emp',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'APPROVED'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-digital-id',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-emp' },
+      replyToken: 'reply-digital-id',
+      postback: { data: 'action=digital_id' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-digital-id');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('數位員工證'), 'Should show digital ID card');
+    assert.ok(json.includes('29793'), 'Should include employee ID');
+    assert.ok(json.includes('quickchart.io/qr'), 'Should include QR code');
+  });
+
+  it('digital_id postback returns error for non-approved user', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-pending',
+      lineUserId: 'U-pending',
+      boundAt: '2026-02-01T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-digital-id-pending',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-pending' },
+      replyToken: 'reply-digital-id-pending',
+      postback: { data: 'action=digital_id' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-digital-id-pending');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('尚未開通'), 'Should show not-approved message');
+  });
+
+  it('digital_id postback returns error for unbound user', async () => {
+    const { service, linePlatformClient } = await createService();
+
+    await service.processEvents('tenant-1', [{
+      type: 'postback',
+      webhookEventId: 'evt-digital-id-unbound',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-unknown' },
+      replyToken: 'reply-digital-id-unbound',
+      postback: { data: 'action=digital_id' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-digital-id-unbound');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('尚未開通'), 'Should show not-approved message');
+  });
+});
+
 describe('WebhookEventService — follow + request_access', () => {
   it('follow event sends welcome Flex Message and links pending rich menu', async () => {
     const { service, linePlatformClient } = await createService();
@@ -684,7 +760,7 @@ describe('WebhookEventService — follow + request_access', () => {
     assert.ok(json.includes('already registered'), 'Should return duplicate error');
   });
 
-  it('unrecognized text is ignored for already-bound user', async () => {
+  it('unrecognized text from bound user replies with already-bound message', async () => {
     const { service, linePlatformClient, employeeBindingRepo } = await createService();
 
     await employeeBindingRepo.upsert({
@@ -702,10 +778,40 @@ describe('WebhookEventService — follow + request_access', () => {
       timestamp: Date.now(),
       source: { type: 'user', userId: 'U-bound' },
       replyToken: 'reply-random',
-      message: { type: 'text', id: 'msg-random', text: 'hello' }
+      message: { type: 'text', id: 'msg-random', text: '12345' }
     }]);
 
     const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-random');
-    assert.ok(!reply, 'Should not reply to unrecognized text from bound user');
+    assert.ok(reply, 'Should reply to bound user');
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('已綁定在工號 E-bound'), 'Should tell user their bound employee ID');
+    assert.ok(json.includes('無法再次綁定'), 'Should say cannot rebind');
+  });
+
+  it('pending user trying another employee ID gets already-bound message', async () => {
+    const { service, linePlatformClient, employeeBindingRepo } = await createService();
+
+    await employeeBindingRepo.upsert({
+      tenantId: 'tenant-1',
+      employeeId: 'E-pending',
+      lineUserId: 'U-pending',
+      boundAt: '2026-02-20T00:00:00.000Z',
+      employmentStatus: 'ACTIVE',
+      accessStatus: 'PENDING'
+    });
+
+    await service.processEvents('tenant-1', [{
+      type: 'message',
+      webhookEventId: 'evt-pending-rebind',
+      timestamp: Date.now(),
+      source: { type: 'user', userId: 'U-pending' },
+      replyToken: 'reply-pending-rebind',
+      message: { type: 'text', id: 'msg-rebind', text: '99999' }
+    }]);
+
+    const reply = linePlatformClient.repliedMessages.find(m => m.replyToken === 'reply-pending-rebind');
+    assert.ok(reply);
+    const json = JSON.stringify(reply.messages);
+    assert.ok(json.includes('已綁定在工號 E-pending'));
   });
 });

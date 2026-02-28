@@ -9,12 +9,21 @@ export interface ProvisionLineResourcesInput {
   webhookUrl: string;
 }
 
+export interface LineMessage {
+  type: string;
+  text?: string;
+  altText?: string;
+  contents?: unknown;
+}
+
 export interface LinePlatformClient {
   validateChannelCredentials(channelId: string, channelSecret: string): Promise<void>;
   provisionResources(input: ProvisionLineResourcesInput): Promise<LineResources>;
   verifyWebhookToken(token: string): Promise<boolean>;
   linkRichMenu(input: { tenantId: string; lineUserId: string; richMenuId: string }): Promise<void>;
   unlinkRichMenu(input: { tenantId: string; lineUserId: string }): Promise<void>;
+  pushMessage(input: { tenantId: string; lineUserId: string; messages: LineMessage[] }): Promise<void>;
+  replyMessage(input: { tenantId: string; replyToken: string; messages: LineMessage[] }): Promise<void>;
 }
 
 export class StubLinePlatformClient implements LinePlatformClient {
@@ -64,6 +73,17 @@ export class StubLinePlatformClient implements LinePlatformClient {
     if (input.lineUserId.startsWith('fail-')) {
       throw new Error('LINE API transient failure while unlinking rich menu');
     }
+  }
+
+  readonly pushedMessages: Array<{ tenantId: string; lineUserId: string; messages: LineMessage[] }> = [];
+  readonly repliedMessages: Array<{ tenantId: string; replyToken: string; messages: LineMessage[] }> = [];
+
+  async pushMessage(input: { tenantId: string; lineUserId: string; messages: LineMessage[] }): Promise<void> {
+    this.pushedMessages.push(input);
+  }
+
+  async replyMessage(input: { tenantId: string; replyToken: string; messages: LineMessage[] }): Promise<void> {
+    this.repliedMessages.push(input);
   }
 }
 
@@ -121,8 +141,8 @@ export class RealLinePlatformClient implements LinePlatformClient {
       input.existingResources?.pendingRichMenuId ??
       (await this.createRichMenu(accessToken, this.createRichMenuRequest(input.tenantId, 'pending')));
 
-    await this.uploadRichMenuImage({ accessToken, richMenuId: approvedRichMenuId });
-    await this.uploadRichMenuImage({ accessToken, richMenuId: pendingRichMenuId });
+    await this.uploadRichMenuImage({ accessToken, richMenuId: approvedRichMenuId, variant: 'approved' });
+    await this.uploadRichMenuImage({ accessToken, richMenuId: pendingRichMenuId, variant: 'pending' });
 
     return {
       ...input.existingResources,
@@ -160,6 +180,36 @@ export class RealLinePlatformClient implements LinePlatformClient {
       method: 'DELETE',
       accessToken,
       operation: 'unlink rich menu'
+    });
+  }
+
+  async pushMessage(input: { tenantId: string; lineUserId: string; messages: LineMessage[] }): Promise<void> {
+    const credentials = await this.getTenantCredentialsOrThrow(input.tenantId);
+    const accessToken = await this.issueChannelAccessToken(credentials.channelId, credentials.channelSecret);
+
+    await this.callLineJson('/v2/bot/message/push', {
+      method: 'POST',
+      accessToken,
+      body: {
+        to: input.lineUserId,
+        messages: input.messages
+      },
+      operation: 'push message'
+    });
+  }
+
+  async replyMessage(input: { tenantId: string; replyToken: string; messages: LineMessage[] }): Promise<void> {
+    const credentials = await this.getTenantCredentialsOrThrow(input.tenantId);
+    const accessToken = await this.issueChannelAccessToken(credentials.channelId, credentials.channelSecret);
+
+    await this.callLineJson('/v2/bot/message/reply', {
+      method: 'POST',
+      accessToken,
+      body: {
+        replyToken: input.replyToken,
+        messages: input.messages
+      },
+      operation: 'reply message'
     });
   }
 
@@ -240,9 +290,9 @@ export class RealLinePlatformClient implements LinePlatformClient {
     return response.json();
   }
 
-  private async uploadRichMenuImage(input: { accessToken: string; richMenuId: string }): Promise<void> {
+  private async uploadRichMenuImage(input: { accessToken: string; richMenuId: string; variant: 'pending' | 'approved' }): Promise<void> {
     const endpoint = `${this.apiDataBaseUrl}/v2/bot/richmenu/${encodeURIComponent(input.richMenuId)}/content`;
-    const imageBytes = createDefaultRichMenuImagePng();
+    const imageBytes = createRichMenuImagePng(input.variant);
     const imagePayload = new Uint8Array(imageBytes.byteLength);
     imagePayload.set(imageBytes);
 
@@ -358,23 +408,129 @@ async function readResponseText(response: Response): Promise<string> {
   return text.trim() || 'No response body';
 }
 
-let defaultRichMenuImagePngCache: Uint8Array | null = null;
+const richMenuImageCache = new Map<string, Uint8Array>();
 
-function createDefaultRichMenuImagePng(): Uint8Array {
-  if (defaultRichMenuImagePngCache) {
-    return defaultRichMenuImagePngCache;
-  }
+function createRichMenuImagePng(variant: 'pending' | 'approved'): Uint8Array {
+  const cached = richMenuImageCache.get(variant);
+  if (cached) return cached;
 
-  defaultRichMenuImagePngCache = createSolidColorPng({
+  const config = RICH_MENU_VARIANTS[variant];
+  const image = createRichMenuSvgPng({
     width: 2500,
     height: 843,
-    red: 245,
-    green: 247,
-    blue: 250,
-    alpha: 255
+    bgColor: config.bgColor,
+    labels: config.labels
   });
 
-  return defaultRichMenuImagePngCache;
+  richMenuImageCache.set(variant, image);
+  return image;
+}
+
+const RICH_MENU_VARIANTS = {
+  pending: {
+    bgColor: { red: 44, green: 62, blue: 80 },       // #2C3E50
+    labels: ['申請開通', '我的員工證', '聯絡管理員']
+  },
+  approved: {
+    bgColor: { red: 26, green: 115, blue: 232 },      // #1a73e8
+    labels: ['員工證', '我的資料', '員工服務']
+  }
+} as const;
+
+function createRichMenuSvgPng(input: {
+  width: number;
+  height: number;
+  bgColor: { red: number; green: number; blue: number };
+  labels: readonly string[];
+}): Uint8Array {
+  // Build the image from a solid-color background.
+  // We render text glyphs manually as filled rectangles so that this works
+  // without any CJK font installed (e.g. on Amazon Linux / Lambda).
+  const { width, height, bgColor, labels } = input;
+
+  const bytesPerPixel = 4;
+  const rowByteLength = 1 + width * bytesPerPixel;
+  const rawImage = Buffer.alloc(rowByteLength * height);
+
+  // Fill background
+  for (let row = 0; row < height; row += 1) {
+    const rowOffset = row * rowByteLength;
+    rawImage[rowOffset] = 0; // PNG filter type 0 (None)
+    for (let col = 0; col < width; col += 1) {
+      const pixelOffset = rowOffset + 1 + col * bytesPerPixel;
+      rawImage[pixelOffset] = bgColor.red;
+      rawImage[pixelOffset + 1] = bgColor.green;
+      rawImage[pixelOffset + 2] = bgColor.blue;
+      rawImage[pixelOffset + 3] = 255;
+    }
+  }
+
+  // Draw two vertical divider lines at x=833 and x=1667
+  const dividerColor = {
+    red: Math.min(255, bgColor.red + 30),
+    green: Math.min(255, bgColor.green + 30),
+    blue: Math.min(255, bgColor.blue + 30)
+  };
+  for (const dx of [833, 1667]) {
+    for (let row = 120; row < 723; row += 1) {
+      const rowOffset = row * rowByteLength;
+      for (const col of [dx, dx + 1]) {
+        if (col >= width) continue;
+        const pixelOffset = rowOffset + 1 + col * bytesPerPixel;
+        rawImage[pixelOffset] = dividerColor.red;
+        rawImage[pixelOffset + 1] = dividerColor.green;
+        rawImage[pixelOffset + 2] = dividerColor.blue;
+        rawImage[pixelOffset + 3] = 255;
+      }
+    }
+  }
+
+  // Draw simplified block labels (each CJK char rendered as a 28x28 white block)
+  const blockSize = 28;
+  const gap = 12;
+  const centerY = Math.floor(height / 2);
+  const centers = [416, 1250, 2083]; // x centers for 3 columns
+
+  for (let i = 0; i < labels.length; i++) {
+    const label = labels[i];
+    const charCount = label.length;
+    const totalWidth = charCount * blockSize + (charCount - 1) * gap;
+    const startX = centers[i] - Math.floor(totalWidth / 2);
+    const startY = centerY - Math.floor(blockSize / 2);
+
+    for (let c = 0; c < charCount; c++) {
+      const bx = startX + c * (blockSize + gap);
+      const by = startY;
+      for (let row = by; row < by + blockSize && row < height; row++) {
+        const rowOffset = row * rowByteLength;
+        for (let col = bx; col < bx + blockSize && col < width; col++) {
+          if (col < 0) continue;
+          const pixelOffset = rowOffset + 1 + col * bytesPerPixel;
+          rawImage[pixelOffset] = 255;
+          rawImage[pixelOffset + 1] = 255;
+          rawImage[pixelOffset + 2] = 255;
+          rawImage[pixelOffset + 3] = 255;
+        }
+      }
+    }
+  }
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8; // bit depth
+  ihdrData[9] = 6; // color type RGBA
+  ihdrData[10] = 0; // compression method
+  ihdrData[11] = 0; // filter method
+  ihdrData[12] = 0; // interlace method
+
+  const compressedData = deflateSync(rawImage, { level: 9 });
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdrChunk = createPngChunk('IHDR', ihdrData);
+  const idatChunk = createPngChunk('IDAT', compressedData);
+  const iendChunk = createPngChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
 }
 
 function createSolidColorPng(input: {

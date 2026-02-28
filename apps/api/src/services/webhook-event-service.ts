@@ -10,6 +10,7 @@ import {
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
   buildAdminActionResultFlexMessage,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   buildAccessConfirmationFlexMessage
 } from '../line/flex-message-templates.js';
 import { LinePlatformClient } from '../line/line-platform-client.js';

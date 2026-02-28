@@ -315,6 +315,7 @@ const onboardingService = new TenantOnboardingService(
   }
 );
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
   invitationRepository,

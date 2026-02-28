@@ -9,7 +9,7 @@ import {
   ValidationError
 } from './errors.js';
 import { requireEmployeePrincipal } from './http/auth-middleware.js';
-import { jsonResponse } from './http/response.js';
+import { jsonResponse, preflightResponse, CorsConfig } from './http/response.js';
 import { RealLineAuthClient, StubLineAuthClient } from './line/line-auth-client.js';
 import { RealLinePlatformClient, StubLinePlatformClient } from './line/line-platform-client.js';
 import { AccessControlRepository, InMemoryAccessControlRepository } from './repositories/access-control-repository.js';
@@ -41,6 +41,7 @@ import { InMemoryTenantRepository, TenantRepository } from './repositories/tenan
 import {
   createDynamoDbDocumentClient,
   DynamoDbAccessControlRepository,
+  DynamoDbAdminAccountRepository,
   DynamoDbAuditEventRepository,
   DynamoDbBatchInviteJobRepository,
   DynamoDbBindingSessionRepository,
@@ -62,6 +63,23 @@ import { InvitationBindingService } from './services/invitation-binding-service.
 import { OffboardingService } from './services/offboarding-service.js';
 import { EmployeeAccessGovernanceService } from './services/employee-access-governance-service.js';
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
+import { AdminAuthService } from './services/admin-auth-service.js';
+import { WebhookEventService } from './services/webhook-event-service.js';
+import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
+import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
+import { InMemoryAsyncJobDispatcher, SqsAsyncJobDispatcher, AsyncJobDispatcher } from './workers/async-job-dispatcher.js';
+import { createRequestLogger } from './logging/request-context.js';
+import { Logger } from './logging/logger.js';
+import { InMemoryMetricEmitter, CloudWatchEmfMetricEmitter, MetricEmitter } from './observability/metrics.js';
+import {
+  InMemoryRateLimiter,
+  NoOpRateLimiter,
+  RateLimiter,
+  classifyRoute,
+  buildRateLimitKey,
+  RATE_LIMITS
+} from './http/rate-limiter.js';
+import { LineWebhookEvent } from './domain/webhook.js';
 
 const createTenantSchema = z.object({
   tenantName: z.string().min(1),
@@ -163,6 +181,16 @@ const retryOffboardingJobSchema = z.object({
   actorId: z.string().min(1).optional()
 });
 
+const adminLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
+
+const adminSetupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8)
+});
+
 const useDynamoDbRepositories = process.env.USE_DYNAMODB_REPOSITORIES === 'true';
 const dynamoDbRegion = process.env.AWS_REGION ?? 'ap-northeast-1';
 const dynamoDbClient = useDynamoDbRepositories
@@ -213,6 +241,12 @@ const auditEventRepository: AuditEventRepository = useDynamoDbRepositories
   ? new DynamoDbAuditEventRepository(dynamoDbClient!, requireEnv('AUDIT_EVENTS_TABLE_NAME'))
   : new InMemoryAuditEventRepository();
 
+const adminAccountRepository = useDynamoDbRepositories
+  ? new DynamoDbAdminAccountRepository(dynamoDbClient!, requireEnv('TENANTS_TABLE_NAME'))
+  : new InMemoryAdminAccountRepository();
+
+const webhookEventRepository = new InMemoryWebhookEventRepository();
+
 const lineCredentialStore = process.env.USE_AWS_SECRETS_MANAGER === 'true'
   ? new AwsSecretsManagerLineCredentialStore({
       region: process.env.AWS_REGION ?? 'ap-northeast-1',
@@ -235,6 +269,67 @@ const lineAuthClient = useRealLineClients
       apiBaseUrl: process.env.LINE_API_BASE_URL ?? 'https://api.line.me'
     })
   : new StubLineAuthClient();
+
+// Async job dispatcher
+const asyncJobDispatcher: AsyncJobDispatcher = (() => {
+  const invitationsQueueUrl = process.env.INVITATIONS_QUEUE_URL;
+  const offboardingQueueUrl = process.env.OFFBOARDING_QUEUE_URL;
+
+  if (invitationsQueueUrl && offboardingQueueUrl) {
+    try {
+      // Dynamic import at module level would require top-level await;
+      // use SqsAsyncJobDispatcher with lazy client construction
+      return new SqsAsyncJobDispatcher({
+        invitationsQueueUrl,
+        offboardingQueueUrl,
+        sqsClient: createSqsClient(),
+        SendMessageCommand: getSendMessageCommand()
+      });
+    } catch {
+      return new InMemoryAsyncJobDispatcher();
+    }
+  }
+
+  return new InMemoryAsyncJobDispatcher();
+})();
+
+function createSqsClient(): { send(command: unknown): Promise<unknown> } {
+  // Lazy load SQS client to avoid import errors in test environments
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SQSClient } = require('@aws-sdk/client-sqs') as typeof import('@aws-sdk/client-sqs');
+    return new SQSClient({ region: process.env.AWS_REGION ?? 'ap-northeast-1' });
+  } catch {
+    return { send: async () => ({}) };
+  }
+}
+
+function getSendMessageCommand(): new (input: { QueueUrl: string; MessageBody: string }) => unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SendMessageCommand } = require('@aws-sdk/client-sqs') as typeof import('@aws-sdk/client-sqs');
+    return SendMessageCommand;
+  } catch {
+    return class MockSendMessageCommand {
+      constructor(public input: unknown) {}
+    } as unknown as new (input: { QueueUrl: string; MessageBody: string }) => unknown;
+  }
+}
+
+// CORS config
+const corsConfig: CorsConfig = {
+  allowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? '').split(',').filter(Boolean)
+};
+
+// Rate limiter
+const rateLimiter: RateLimiter = process.env.RATE_LIMITER_DISABLED === 'true'
+  ? new NoOpRateLimiter()
+  : new InMemoryRateLimiter();
+
+// Metrics
+const metricEmitter: MetricEmitter = process.env.USE_DYNAMODB_REPOSITORIES === 'true'
+  ? new CloudWatchEmfMetricEmitter()
+  : new InMemoryMetricEmitter();
 
 const onboardingService = new TenantOnboardingService(
   tenantRepository,
@@ -260,7 +355,8 @@ const invitationBindingService = new InvitationBindingService(
     sessionTtlMinutes: 10,
     maxBindingAttempts: 5,
     lockoutMinutes: 15,
-    now: () => new Date()
+    now: () => new Date(),
+    asyncJobDispatcher
   }
 );
 
@@ -294,7 +390,8 @@ const offboardingService = new OffboardingService(
   {
     now: () => new Date(),
     maxAttempts: 5,
-    backoffBaseSeconds: 30
+    backoffBaseSeconds: 30,
+    asyncJobDispatcher
   }
 );
 
@@ -307,25 +404,76 @@ const employeeAccessGovernanceService = new EmployeeAccessGovernanceService(
   }
 );
 
+const adminAuthService = new AdminAuthService(adminAccountRepository, {
+  issuer: 'one-team-api',
+  tokenSecret: process.env.ADMIN_TOKEN_SECRET ?? 'admin-dev-secret-change-me',
+  tokenTtlSeconds: 8 * 60 * 60,
+  now: () => new Date()
+});
+
+const webhookEventService = new WebhookEventService(
+  webhookEventRepository,
+  employeeBindingRepository,
+  auditEventRepository,
+  linePlatformClient,
+  employeeAccessGovernanceService,
+  { now: () => new Date() }
+);
+
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  const startTime = Date.now();
+  const logger = createRequestLogger(event);
+  const origin = getHeaderCaseInsensitive(event.headers, 'origin') ?? '';
+  const responseOptions = { origin, corsConfig };
+
   try {
     const method = event.httpMethod.toUpperCase();
     const path = event.path;
 
+    logger.info('request.start', { method, path });
+
+    // OPTIONS preflight
+    if (method === 'OPTIONS') {
+      return preflightResponse(origin, corsConfig);
+    }
+
+    // Rate limiting
+    const rateLimitResult = checkRateLimit(event, path);
+    if (!rateLimitResult.allowed) {
+      metricEmitter.emit('OneTeam', 'RateLimitExceeded', 1, 'Count');
+      return jsonResponse(429, {
+        error: 'Too many requests',
+        retryAfterSeconds: rateLimitResult.retryAfterSeconds
+      }, responseOptions);
+    }
+
     if (method === 'GET' && path === '/health') {
-      return jsonResponse(200, { ok: true });
+      return jsonResponse(200, { ok: true }, responseOptions);
     }
 
     const lineWebhookMatch = path.match(/^\/v1\/line\/webhook\/([^/]+)$/);
     if (method === 'POST' && lineWebhookMatch) {
-      return handleLineWebhookEvent(event, lineWebhookMatch[1]);
+      return handleLineWebhookEvent(event, lineWebhookMatch[1], logger, responseOptions);
+    }
+
+    // Admin auth routes
+    if (method === 'POST' && path === '/v1/admin/auth/login') {
+      const payload = adminLoginSchema.parse(parseBody(event));
+      const result = await adminAuthService.login(payload);
+      return jsonResponse(200, result, responseOptions);
+    }
+
+    if (method === 'POST' && path === '/v1/admin/auth/setup') {
+      const payload = adminSetupSchema.parse(parseBody(event));
+      const result = await adminAuthService.setup(payload);
+      return jsonResponse(201, result, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/admin/tenants') {
       assertAdminAuthorized(event);
       const payload = createTenantSchema.parse(parseBody(event));
       const snapshot = await onboardingService.createTenant(payload);
-      return jsonResponse(201, snapshot);
+      return jsonResponse(201, snapshot, responseOptions);
     }
 
     const connectMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/connect$/);
@@ -339,14 +487,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         loginChannelId: payload.loginChannelId,
         loginChannelSecret: payload.loginChannelSecret
       });
-      return jsonResponse(200, snapshot);
+      return jsonResponse(200, snapshot, responseOptions);
     }
 
     const provisionMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/provision$/);
     if (method === 'POST' && provisionMatch) {
       assertAdminAuthorized(event);
       const result = await onboardingService.provisionLineResources(provisionMatch[1]);
-      return jsonResponse(200, result);
+      return jsonResponse(200, result, responseOptions);
     }
 
     const verifyMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/webhook\/verify$/);
@@ -357,14 +505,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         tenantId: verifyMatch[1],
         verificationToken: payload.verificationToken
       });
-      return jsonResponse(200, snapshot);
+      return jsonResponse(200, snapshot, responseOptions);
     }
 
     const statusMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/line\/setup-status$/);
     if (method === 'GET' && statusMatch) {
       assertAdminAuthorized(event);
       const snapshot = await onboardingService.getSetupStatus(statusMatch[1]);
-      return jsonResponse(200, snapshot);
+      return jsonResponse(200, snapshot, responseOptions);
     }
 
     const createInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites$/);
@@ -380,7 +528,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         ttlMinutes: payload.ttlMinutes,
         usageLimit: payload.usageLimit
       });
-      return jsonResponse(201, invitation);
+      return jsonResponse(201, invitation, responseOptions);
     }
 
     const batchInviteMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/invites\/batch-email$/);
@@ -396,7 +544,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         ttlMinutes: payload.ttlMinutes,
         recipients: payload.recipients
       });
-      return jsonResponse(202, job);
+      return jsonResponse(202, job, responseOptions);
     }
 
     const dispatchBatchInviteMatch = path.match(
@@ -409,13 +557,13 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         tenantId: dispatchBatchInviteMatch[1],
         jobId: dispatchBatchInviteMatch[2]
       });
-      return jsonResponse(200, job);
+      return jsonResponse(200, job, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/public/bind/start') {
       const payload = bindStartSchema.parse(parseBody(event));
       const result = await invitationBindingService.startBinding(payload);
-      return jsonResponse(200, result);
+      return jsonResponse(200, result, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/public/bind/complete') {
@@ -428,16 +576,17 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         employeeId: bindingResult.employeeId
       });
 
+      metricEmitter.emit('OneTeam', 'BindingCompleted', 1, 'Count');
       return jsonResponse(200, {
         ...bindingResult,
         auth: tokens
-      });
+      }, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/public/auth/refresh') {
       const payload = refreshSessionSchema.parse(parseBody(event));
       const tokens = await authSessionService.refreshEmployeeSession(payload);
-      return jsonResponse(200, tokens);
+      return jsonResponse(200, tokens, responseOptions);
     }
 
     const meMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/profile$/);
@@ -454,7 +603,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         lineUserId: principal.lineUserId,
         sessionId: principal.sessionId,
         tokenExpiresAtEpochSeconds: principal.exp
-      });
+      }, responseOptions);
     }
 
     const accessRequestMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/access-request$/);
@@ -470,7 +619,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           tenantId: principal.tenantId,
           lineUserId: principal.lineUserId
         });
-        return jsonResponse(200, profile);
+        return jsonResponse(200, profile, responseOptions);
       }
 
       if (method === 'POST') {
@@ -478,7 +627,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           tenantId: principal.tenantId,
           lineUserId: principal.lineUserId
         });
-        return jsonResponse(200, profile);
+        return jsonResponse(200, profile, responseOptions);
       }
     }
 
@@ -504,7 +653,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         usageLimit: payload.usageLimit
       });
 
-      return jsonResponse(201, invitation);
+      return jsonResponse(201, invitation, responseOptions);
     }
 
     const accessDecisionMatch = path.match(
@@ -517,12 +666,12 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const profile = await employeeAccessGovernanceService.decideAccess({
         tenantId: accessDecisionMatch[1],
         employeeId: accessDecisionMatch[2],
-        reviewerId: payload.reviewerId ?? 'admin-token',
+        reviewerId: payload.reviewerId ?? getAdminActorId(event),
         decision: payload.decision,
         permissions: payload.permissions
       });
 
-      return jsonResponse(200, profile);
+      return jsonResponse(200, profile, responseOptions);
     }
 
     const offboardMatch = path.match(
@@ -540,7 +689,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         employeeId: offboardMatch[2],
         actorId: actor.actorType === 'ADMIN' ? payload.actorId ?? actor.actorId : actor.actorId
       });
-      return jsonResponse(200, result);
+      metricEmitter.emit('OneTeam', 'OffboardingStarted', 1, 'Count');
+      return jsonResponse(200, result, responseOptions);
     }
 
     const retryOffboardingMatch = path.match(/^\/v1\/admin\/offboarding\/jobs\/([^/]+)\/retry$/);
@@ -551,14 +701,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         jobId: retryOffboardingMatch[1],
         actorId: payload.actorId ?? 'hr-admin'
       });
-      return jsonResponse(200, job);
+      return jsonResponse(200, job, responseOptions);
     }
 
     const auditMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/audit-events$/);
     if (method === 'GET' && auditMatch) {
       assertAdminAuthorized(event);
       const events = await offboardingService.listAuditEvents(auditMatch[1]);
-      return jsonResponse(200, { events });
+      return jsonResponse(200, { events }, responseOptions);
     }
 
     const digitalIdMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/digital-id$/);
@@ -575,52 +725,84 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         lineUserId: principal.lineUserId
       });
 
-      return jsonResponse(200, generated);
+      metricEmitter.emit('OneTeam', 'DigitalIdVerified', 1, 'Count');
+      return jsonResponse(200, generated, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/scanner/verify') {
       if (!isScannerAuthorized(event)) {
-        return jsonResponse(401, { error: 'Invalid scanner API key' });
+        return jsonResponse(401, { error: 'Invalid scanner API key' }, responseOptions);
       }
 
       const payload = scannerVerifySchema.parse(parseBody(event));
       const result = await digitalIdService.verifyDynamicPayload(payload.payload);
-      return jsonResponse(200, result);
+      return jsonResponse(200, result, responseOptions);
     }
 
-    return jsonResponse(404, { error: `Route not found: ${method} ${path}` });
+    return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return jsonResponse(400, {
         error: 'Validation failed',
         details: error.issues
-      });
+      }, responseOptions);
     }
 
     if (error instanceof UnauthorizedError) {
-      return jsonResponse(401, { error: error.message });
+      return jsonResponse(401, { error: error.message }, responseOptions);
     }
 
     if (error instanceof ForbiddenError) {
-      return jsonResponse(403, { error: error.message });
+      return jsonResponse(403, { error: error.message }, responseOptions);
     }
 
     if (error instanceof ConflictError) {
-      return jsonResponse(409, { error: error.message });
+      return jsonResponse(409, { error: error.message }, responseOptions);
     }
 
     if (error instanceof ValidationError) {
-      return jsonResponse(400, { error: error.message });
+      return jsonResponse(400, { error: error.message }, responseOptions);
     }
 
     if (error instanceof NotFoundError) {
-      return jsonResponse(404, { error: error.message });
+      return jsonResponse(404, { error: error.message }, responseOptions);
     }
+
+    const latencyMs = Date.now() - startTime;
+    logger.error('request.error', error, { latencyMs });
+    metricEmitter.emit('OneTeam', 'ErrorCount', 1, 'Count');
 
     return jsonResponse(500, {
       error: error instanceof Error ? error.message : 'Internal server error'
-    });
+    }, responseOptions);
+  } finally {
+    const latencyMs = Date.now() - startTime;
+    metricEmitter.emit('OneTeam', 'RequestCount', 1, 'Count');
+    metricEmitter.emit('OneTeam', 'RequestLatency', latencyMs, 'Milliseconds');
   }
+}
+
+function checkRateLimit(
+  event: APIGatewayProxyEvent,
+  path: string
+): { allowed: boolean; retryAfterSeconds?: number } {
+  const category = classifyRoute(path);
+  const limits = RATE_LIMITS[category];
+
+  let identifier: string;
+  if (category === 'webhook') {
+    const tenantMatch = path.match(/^\/v1\/line\/webhook\/([^/]+)$/);
+    identifier = tenantMatch?.[1] ?? 'unknown';
+  } else if (category === 'admin') {
+    // Use tenant from path or source IP
+    const tenantMatch = path.match(/\/tenants\/([^/]+)/);
+    identifier = tenantMatch?.[1] ?? event.requestContext?.identity?.sourceIp ?? 'unknown';
+  } else {
+    identifier = event.requestContext?.identity?.sourceIp ?? 'unknown';
+  }
+
+  const key = buildRateLimitKey(category, identifier);
+  return rateLimiter.check(key, limits.limit, limits.windowSeconds);
 }
 
 function parseBody(event: APIGatewayProxyEvent): unknown {
@@ -661,33 +843,43 @@ function readRawBody(event: APIGatewayProxyEvent): string {
 
 async function handleLineWebhookEvent(
   event: APIGatewayProxyEvent,
-  tenantId: string
+  tenantId: string,
+  logger: Logger,
+  responseOptions: { origin: string; corsConfig: CorsConfig }
 ): Promise<APIGatewayProxyResult> {
   const signature = getHeaderCaseInsensitive(event.headers, 'x-line-signature');
 
   if (!signature) {
-    return jsonResponse(401, { error: 'Missing LINE webhook signature header' });
+    return jsonResponse(401, { error: 'Missing LINE webhook signature header' }, responseOptions);
   }
 
   const credentials = await lineCredentialStore.getTenantCredentials(tenantId);
 
   if (!credentials) {
-    return jsonResponse(401, { error: 'Invalid LINE webhook signature' });
+    return jsonResponse(401, { error: 'Invalid LINE webhook signature' }, responseOptions);
   }
 
   const rawBody = readRawBody(event);
   const normalizedSignature = signature.trim();
 
   if (!isLineWebhookSignatureValid(rawBody, normalizedSignature, credentials.channelSecret)) {
-    return jsonResponse(401, { error: 'Invalid LINE webhook signature' });
+    return jsonResponse(401, { error: 'Invalid LINE webhook signature' }, responseOptions);
   }
 
   const payload = lineWebhookPayloadSchema.parse(parseRawJson(rawBody));
 
+  // Process webhook events with idempotency
+  const webhookEvents = payload.events as LineWebhookEvent[];
+  const result = await webhookEventService.processEvents(tenantId, webhookEvents);
+
+  logger.info('webhook.processed', { tenantId, ...result });
+
   return jsonResponse(200, {
     ok: true,
-    receivedEvents: payload.events.length
-  });
+    receivedEvents: payload.events.length,
+    processed: result.processed,
+    skipped: result.skipped
+  }, responseOptions);
 }
 
 function isLineWebhookSignatureValid(rawBody: string, signature: string, channelSecret: string): boolean {
@@ -727,8 +919,29 @@ function isAdminAuthorized(event: APIGatewayProxyEvent): boolean {
     return false;
   }
 
+  // Try admin JWT first
+  try {
+    adminAuthService.validateAdminToken(bearerToken);
+    return true;
+  } catch {
+    // Fall through to static token check
+  }
+
+  // Fall back to static token (deprecated)
   const expectedAdminToken = process.env.ADMIN_TOKEN ?? 'admin-token';
   return bearerToken === expectedAdminToken;
+}
+
+function getAdminActorId(event: APIGatewayProxyEvent): string {
+  const bearerToken = extractBearerTokenOptional(event);
+  if (!bearerToken) return 'admin-token';
+
+  try {
+    const principal = adminAuthService.validateAdminToken(bearerToken);
+    return principal.adminId;
+  } catch {
+    return 'admin-token';
+  }
 }
 
 async function authorizeAdminOrPermission(input: {
@@ -742,7 +955,7 @@ async function authorizeAdminOrPermission(input: {
   if (isAdminAuthorized(input.event)) {
     return {
       actorType: 'ADMIN',
-      actorId: 'admin-token'
+      actorId: getAdminActorId(input.event)
     };
   }
 

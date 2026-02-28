@@ -62,6 +62,7 @@ export interface EmployeeBindingRecord {
   accessRequestedAt?: string;
   accessReviewedAt?: string;
   accessReviewedBy?: string;
+  lineDisconnectedAt?: string;
 }
 
 export type EmployeeAccessStatus = 'PENDING' | 'APPROVED' | 'REJECTED';

@@ -1,0 +1,15 @@
+{
+  "welcome.message": "歡迎加入！請點選下方選單開始綁定您的員工身份。",
+  "welcome.title": "歡迎使用 ONE TEAM",
+  "binding.instruction": "請輸入您的員工編號和綁定碼完成綁定。",
+  "binding.success": "綁定成功！您現在可以使用員工服務了。",
+  "access.pending": "您的存取申請正在審核中，請耐心等候。",
+  "access.approved": "您的存取申請已通過！",
+  "access.rejected": "您的存取申請未通過，如有疑問請聯絡管理員。",
+  "offboarding.notification": "您的帳號已被管理員離職處理。",
+  "postback.received": "已收到您的操作。",
+  "error.generic": "系統發生錯誤，請稍後再試。",
+  "error.rate_limited": "請求過於頻繁，請稍後再試。",
+  "email.invitation.subject": "{{tenantName}} — ONE TEAM 員工綁定邀請",
+  "email.invitation.greeting": "您好，{{employeeId}}"
+}

@@ -15,7 +15,7 @@ export interface OffboardingJobRecord {
   updatedAt: string;
 }
 
-export type AuditAction = 'EMPLOYEE_OFFBOARDED' | 'RICH_MENU_UNLINK';
+export type AuditAction = 'EMPLOYEE_OFFBOARDED' | 'RICH_MENU_UNLINK' | 'LINE_UNFOLLOWED';
 export type AuditOutcome = 'SUCCESS' | 'FAILED' | 'RETRY_SCHEDULED';
 
 export interface AuditEventRecord {

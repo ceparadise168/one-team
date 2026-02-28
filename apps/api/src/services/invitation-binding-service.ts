@@ -20,6 +20,7 @@ import {
   InvitationRepository
 } from '../repositories/invitation-binding-repository.js';
 import { TenantRepository } from '../repositories/tenant-repository.js';
+import { AsyncJobDispatcher } from '../workers/async-job-dispatcher.js';
 
 interface ServiceOptions {
   inviteBaseUrl: string;
@@ -27,6 +28,7 @@ interface ServiceOptions {
   maxBindingAttempts: number;
   lockoutMinutes: number;
   now: () => Date;
+  asyncJobDispatcher?: AsyncJobDispatcher;
 }
 
 export interface CreateInvitationInput {
@@ -327,7 +329,12 @@ export class InvitationBindingService {
           await this.dispatchInviteEmail({
             tenantId: input.tenantId,
             employeeId: recipient.employeeId,
-            email: recipient.email
+            email: recipient.email,
+            invitationId: recipient.invitationId,
+            invitationToken: recipient.invitationToken,
+            invitationUrl: recipient.invitationUrl,
+            oneTimeBindingCode: recipient.oneTimeBindingCode,
+            jobId: input.jobId
           });
           return {
             ...recipient,
@@ -574,9 +581,28 @@ export class InvitationBindingService {
     tenantId: string;
     employeeId: string;
     email: string;
+    invitationId?: string;
+    invitationToken?: string;
+    invitationUrl?: string;
+    oneTimeBindingCode?: string;
+    jobId?: string;
   }): Promise<void> {
     if (input.email.includes('fail-dispatch')) {
       throw new Error('Simulated invitation dispatch failure');
+    }
+
+    const dispatcher = this.options.asyncJobDispatcher;
+    if (dispatcher && input.invitationId && input.invitationToken && input.invitationUrl && input.oneTimeBindingCode) {
+      await dispatcher.sendInvitationEmail({
+        tenantId: input.tenantId,
+        jobId: input.jobId ?? '',
+        email: input.email,
+        employeeId: input.employeeId,
+        invitationId: input.invitationId,
+        invitationToken: input.invitationToken,
+        invitationUrl: input.invitationUrl,
+        oneTimeBindingCode: input.oneTimeBindingCode
+      });
     }
   }
 

@@ -51,6 +51,9 @@ class CapturingLinePlatformClient implements LinePlatformClient {
   async unlinkRichMenu(input: { tenantId: string; lineUserId: string }): Promise<void> {
     void input;
   }
+
+  async pushMessage(): Promise<void> {}
+  async replyMessage(): Promise<void> {}
 }
 
 test('submit access request keeps pending state and links pending menu', async () => {

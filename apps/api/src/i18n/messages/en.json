@@ -1,0 +1,15 @@
+{
+  "welcome.message": "Welcome! Please tap the menu below to start binding your employee identity.",
+  "welcome.title": "Welcome to ONE TEAM",
+  "binding.instruction": "Please enter your employee ID and binding code to complete the process.",
+  "binding.success": "Binding successful! You can now use employee services.",
+  "access.pending": "Your access request is under review. Please wait.",
+  "access.approved": "Your access request has been approved!",
+  "access.rejected": "Your access request was rejected. Contact your administrator for details.",
+  "offboarding.notification": "Your account has been offboarded by an administrator.",
+  "postback.received": "Your action has been received.",
+  "error.generic": "A system error occurred. Please try again later.",
+  "error.rate_limited": "Too many requests. Please try again later.",
+  "email.invitation.subject": "{{tenantName}} — ONE TEAM Employee Binding Invitation",
+  "email.invitation.greeting": "Hello, {{employeeId}}"
+}

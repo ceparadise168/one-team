@@ -6,11 +6,13 @@ import { EmployeeBindingRepository } from '../repositories/invitation-binding-re
 import { AuditEventRepository, OffboardingJobRepository } from '../repositories/offboarding-repository.js';
 import { AuthSessionService } from './auth-session-service.js';
 import { AuditEventRecord, OffboardingJobRecord } from '../domain/offboarding.js';
+import { AsyncJobDispatcher } from '../workers/async-job-dispatcher.js';
 
 interface ServiceOptions {
   now: () => Date;
   maxAttempts: number;
   backoffBaseSeconds: number;
+  asyncJobDispatcher?: AsyncJobDispatcher;
 }
 
 const DEFAULT_OPTIONS: ServiceOptions = {
@@ -98,6 +100,21 @@ export class OffboardingService {
       outcome: 'SUCCESS',
       message: 'Employee status changed to OFFBOARDED and sessions revoked'
     });
+
+    if (this.options.asyncJobDispatcher) {
+      await this.options.asyncJobDispatcher.sendOffboardingJob({
+        jobId: job.jobId,
+        tenantId: input.tenantId,
+        employeeId: input.employeeId,
+        lineUserId: binding.lineUserId,
+        actorId: input.actorId
+      });
+
+      return {
+        idempotent: false,
+        job
+      };
+    }
 
     const processed = await this.processOffboardingJob({
       jobId: job.jobId,

@@ -10,6 +10,7 @@ import {
   aws_dynamodb as dynamodb,
   aws_iam as iam,
   aws_lambda as lambda,
+  aws_lambda_event_sources as lambdaEventSources,
   aws_lambda_nodejs as lambdaNodejs,
   aws_logs as logs,
   aws_ses as ses,
@@ -69,6 +70,7 @@ export class PlatformStack extends Stack {
       handler: 'handler',
       timeout: Duration.seconds(30),
       memorySize: 512,
+      tracing: lambda.Tracing.ACTIVE,
       environment: {
         USE_AWS_SECRETS_MANAGER: 'true',
         USE_DYNAMODB_REPOSITORIES: 'true',
@@ -92,7 +94,9 @@ export class PlatformStack extends Stack {
           'secretsmanager:DescribeSecret',
           'secretsmanager:GetSecretValue'
         ],
-        resources: ['*']
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${lineSecretPrefix}/*`
+        ]
       })
     );
 
@@ -206,6 +210,74 @@ export class PlatformStack extends Stack {
     tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
     auditEventsTable.grantReadWriteData(apiRuntimeHandler);
 
+    invitationsQueue.grantSendMessages(apiRuntimeHandler);
+    offboardingQueue.grantSendMessages(apiRuntimeHandler);
+
+    apiRuntimeHandler.addEnvironment('INVITATIONS_QUEUE_URL', invitationsQueue.queueUrl);
+    apiRuntimeHandler.addEnvironment('OFFBOARDING_QUEUE_URL', offboardingQueue.queueUrl);
+
+    const invitationEmailWorker = new lambdaNodejs.NodejsFunction(this, 'InvitationEmailWorker', {
+      functionName: `${prefix}-invitation-email-worker`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: fileURLToPath(new URL('../../../../apps/api/src/workers/invitation-email-worker.ts', import.meta.url)),
+      handler: 'handler',
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      reservedConcurrentExecutions: 10,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        USE_DYNAMODB_REPOSITORIES: 'true',
+        EMAIL_ADAPTER_MODE: 'external',
+        TENANTS_TABLE_NAME: `${prefix}-tenants`,
+        INVITATIONS_TABLE_NAME: `${prefix}-invitations`
+      }
+    });
+
+    invitationEmailWorker.addEventSource(
+      new lambdaEventSources.SqsEventSource(invitationsQueue, {
+        batchSize: 5,
+        reportBatchItemFailures: true
+      })
+    );
+
+    tenantsTable.grantReadData(invitationEmailWorker);
+    invitationsTable.grantReadWriteData(invitationEmailWorker);
+
+    const offboardingWorker = new lambdaNodejs.NodejsFunction(this, 'OffboardingWorker', {
+      functionName: `${prefix}-offboarding-worker`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: fileURLToPath(new URL('../../../../apps/api/src/workers/offboarding-worker.ts', import.meta.url)),
+      handler: 'handler',
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        USE_DYNAMODB_REPOSITORIES: 'true',
+        USE_AWS_SECRETS_MANAGER: 'true',
+        LINE_INTEGRATION_MODE: 'real',
+        LINE_SECRET_PREFIX: lineSecretPrefix,
+        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`
+      }
+    });
+
+    offboardingWorker.addEventSource(
+      new lambdaEventSources.SqsEventSource(offboardingQueue, {
+        batchSize: 1,
+        reportBatchItemFailures: true
+      })
+    );
+
+    auditEventsTable.grantReadWriteData(offboardingWorker);
+
+    offboardingWorker.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${lineSecretPrefix}/*`
+        ]
+      })
+    );
+
     const lineCredentialsSecret = new secretsmanager.Secret(this, 'LineCredentialsSecret', {
       secretName: `${prefix}/line/credentials`,
       description: 'LINE credentials for tenant setup wizard'
@@ -262,6 +334,36 @@ export class PlatformStack extends Stack {
         statistic: 'max'
       }),
       threshold: 100,
+      evaluationPeriods: 1
+    });
+
+    new cloudwatch.Alarm(this, 'InvitationsDlqDepthAlarm', {
+      alarmName: `${prefix}-invitations-dlq-depth`,
+      metric: invitationsDlq.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(5),
+        statistic: 'max'
+      }),
+      threshold: 1,
+      evaluationPeriods: 1
+    });
+
+    new cloudwatch.Alarm(this, 'InvitationEmailWorkerErrorAlarm', {
+      alarmName: `${prefix}-invitation-email-worker-errors`,
+      metric: invitationEmailWorker.metricErrors({
+        period: Duration.minutes(5),
+        statistic: 'sum'
+      }),
+      threshold: 3,
+      evaluationPeriods: 1
+    });
+
+    new cloudwatch.Alarm(this, 'OffboardingWorkerErrorAlarm', {
+      alarmName: `${prefix}-offboarding-worker-errors`,
+      metric: offboardingWorker.metricErrors({
+        period: Duration.minutes(5),
+        statistic: 'sum'
+      }),
+      threshold: 3,
       evaluationPeriods: 1
     });
 

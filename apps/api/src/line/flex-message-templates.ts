@@ -538,7 +538,21 @@ export function buildDigitalIdFlexMessage(employeeId: string): LineMessage {
   };
 }
 
-export function buildServicesMenuFlexMessage(options?: { isAdmin?: boolean }): LineMessage {
+export function buildServicesMenuFlexMessage(options?: {
+  isAdmin?: boolean;
+  miniAppBaseUrl?: string;
+}): LineMessage {
+  const miniAppBase = options?.miniAppBaseUrl ?? 'https://miniapp.line.me/';
+  const enabledServices = ['volunteer'];
+
+  const allServices = [
+    { id: 'volunteer', label: '志工活動', desc: '查詢與報名志工活動', path: '/volunteer' },
+    { id: 'voting', label: '投票', desc: '參與公司投票', path: '/voting' },
+    { id: 'packages', label: '包裹簽收', desc: '簽收包裹通知', path: '/packages' },
+    { id: 'repair', label: '總務報修', desc: '提交報修申請', path: '/repair' },
+    { id: 'visitor', label: '訪客登記', desc: '登記訪客到訪', path: '/visitor' },
+  ];
+
   const bubbles: unknown[] = [
     {
       type: 'bubble',
@@ -578,8 +592,12 @@ export function buildServicesMenuFlexMessage(options?: { isAdmin?: boolean }): L
           }
         ]
       }
-    },
-    {
+    }
+  ];
+
+  for (const svc of allServices) {
+    const enabled = enabledServices.includes(svc.id);
+    bubbles.push({
       type: 'bubble',
       body: {
         type: 'box',
@@ -587,15 +605,16 @@ export function buildServicesMenuFlexMessage(options?: { isAdmin?: boolean }): L
         contents: [
           {
             type: 'text',
-            text: '我的資料',
+            text: svc.label,
             weight: 'bold',
-            size: 'lg'
+            size: 'lg',
+            color: enabled ? '#333333' : '#999999'
           },
           {
             type: 'text',
-            text: '查看與管理個人資料',
+            text: enabled ? svc.desc : `${svc.desc}（即將推出）`,
             margin: 'sm',
-            color: '#666666',
+            color: enabled ? '#666666' : '#BBBBBB',
             wrap: true
           }
         ]
@@ -606,19 +625,25 @@ export function buildServicesMenuFlexMessage(options?: { isAdmin?: boolean }): L
         contents: [
           {
             type: 'button',
-            action: {
-              type: 'postback',
-              label: '我的資料',
-              data: 'action=profile',
-              displayText: '我的資料'
-            },
+            action: enabled
+              ? {
+                  type: 'uri',
+                  label: svc.label,
+                  uri: `${miniAppBase}${svc.path}`,
+                }
+              : {
+                  type: 'postback',
+                  label: '即將推出',
+                  data: `action=coming_soon&service=${svc.id}`,
+                  displayText: svc.label,
+                },
             style: 'primary',
-            color: '#1a73e8'
+            color: enabled ? '#1DB446' : '#CCCCCC'
           }
         ]
       }
-    }
-  ];
+    });
+  }
 
   if (options?.isAdmin) {
     bubbles.push({

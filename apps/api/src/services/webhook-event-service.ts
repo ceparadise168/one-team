@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface WebhookEventServiceOptions {
   now: () => Date;
+  miniAppBaseUrl?: string;
 }
 
 export class WebhookEventService {
@@ -241,6 +242,15 @@ export class WebhookEventService {
       case 'admin_reject':
         await this.handleAdminAction('REJECT', tenantId, event, parsed.employeeId);
         return;
+      case 'coming_soon':
+        if (event.replyToken) {
+          await this.linePlatformClient.replyMessage({
+            tenantId,
+            replyToken: event.replyToken,
+            messages: [{ type: 'text', text: '此功能即將推出，敬請期待！' }],
+          });
+        }
+        return;
       default:
         break;
     }
@@ -268,7 +278,12 @@ export class WebhookEventService {
     await this.linePlatformClient.replyMessage({
       tenantId,
       replyToken: event.replyToken,
-      messages: [buildServicesMenuFlexMessage({ isAdmin })]
+      messages: [
+        buildServicesMenuFlexMessage({
+          isAdmin,
+          miniAppBaseUrl: this.options.miniAppBaseUrl,
+        }),
+      ]
     });
   }
 

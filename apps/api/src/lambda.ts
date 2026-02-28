@@ -404,7 +404,10 @@ const webhookEventService = new WebhookEventService(
   employeeAccessGovernanceService,
   tenantRepository,
   selfRegistrationService,
-  { now: () => new Date() }
+  {
+    now: () => new Date(),
+    miniAppBaseUrl: process.env.MINI_APP_BASE_URL,
+  }
 );
 
 const volunteerRepository = new InMemoryVolunteerRepository();

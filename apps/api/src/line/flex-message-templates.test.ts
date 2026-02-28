@@ -126,20 +126,26 @@ describe('buildDigitalIdFlexMessage', () => {
 });
 
 describe('buildServicesMenuFlexMessage', () => {
-  it('returns 2-bubble carousel for non-admin', () => {
+  it('returns carousel with digital-id + 5 services for non-admin', () => {
     const msg = buildServicesMenuFlexMessage();
     assert.equal(msg.type, 'flex');
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    assert.equal(contents.contents.length, 2);
+    // 1 (員工證) + 5 (services) = 6
+    assert.equal(contents.contents.length, 6);
+    const json = JSON.stringify(contents);
+    assert.ok(json.includes('志工活動'));
+    assert.ok(json.includes('uri'));
   });
 
-  it('returns 3-bubble carousel for admin', () => {
+  it('returns carousel with admin bubble for admin', () => {
     const msg = buildServicesMenuFlexMessage({ isAdmin: true });
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    assert.equal(contents.contents.length, 3);
-    const json = JSON.stringify(contents.contents[2]);
+    // 1 (員工證) + 5 (services) + 1 (管理後台) = 7
+    assert.equal(contents.contents.length, 7);
+    const lastBubble = contents.contents[6];
+    const json = JSON.stringify(lastBubble);
     assert.ok(json.includes('管理後台'));
     assert.ok(json.includes('action=admin_dashboard'));
   });

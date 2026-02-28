@@ -13,7 +13,10 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.923.0",
+    "@aws-sdk/lib-dynamodb": "^3.923.0",
     "@types/node": "^22.10.2",
+    "sharp": "^0.33",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "esbuild": "^0.25.0",

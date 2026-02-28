@@ -65,8 +65,10 @@ import { EmployeeAccessGovernanceService } from './services/employee-access-gove
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 import { AdminAuthService } from './services/admin-auth-service.js';
 import { SelfRegistrationService } from './services/self-registration-service.js';
+import { VolunteerService } from './services/volunteer-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
+import { InMemoryVolunteerRepository } from './repositories/volunteer-repository.js';
 import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
 import { InMemoryAsyncJobDispatcher, SqsAsyncJobDispatcher, AsyncJobDispatcher } from './workers/async-job-dispatcher.js';
 import { createRequestLogger } from './logging/request-context.js';
@@ -405,6 +407,14 @@ const webhookEventService = new WebhookEventService(
   { now: () => new Date() }
 );
 
+const volunteerRepository = new InMemoryVolunteerRepository();
+// TODO Task 10: Replace with DynamoDbVolunteerRepository when USE_DYNAMODB_REPOSITORIES is set
+const volunteerService = new VolunteerService(volunteerRepository, employeeBindingRepository, {
+  tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
+  signingSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-signing-secret',
+  now: () => new Date(),
+});
+
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const startTime = Date.now();
   const logger = createRequestLogger(event);
@@ -683,6 +693,134 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const payload = scannerVerifySchema.parse(parseBody(event));
       const result = await digitalIdService.verifyDynamicPayload(payload.payload);
       return jsonResponse(200, result, responseOptions);
+    }
+
+    // Volunteer: list activities / create activity
+    const volunteerActivitiesMatch = path.match(/^\/v1\/volunteer\/activities$/);
+    if (volunteerActivitiesMatch) {
+      if (method === 'GET') {
+        const status = event.queryStringParameters?.status ?? 'OPEN';
+        const fromDate = event.queryStringParameters?.from;
+        const activities = await volunteerService.listActivities({ status, fromDate });
+        return jsonResponse(200, { activities }, responseOptions);
+      }
+      if (method === 'POST') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await volunteerService.createActivity({
+          title: body.title as string,
+          description: body.description as string,
+          location: body.location as string,
+          activityDate: body.activityDate as string,
+          startTime: body.startTime as string,
+          endTime: body.endTime as string,
+          capacity: body.capacity as number | null,
+          checkInMode: body.checkInMode as 'organizer-scan' | 'self-scan',
+          createdBy: principal.employeeId,
+        });
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    // Volunteer: my activities
+    if (path === '/v1/volunteer/my-activities' && method === 'GET') {
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const registrations = await volunteerService.myActivities(principal.employeeId);
+      return jsonResponse(200, { registrations }, responseOptions);
+    }
+
+    // Volunteer: single activity
+    const volunteerActivityMatch = path.match(/^\/v1\/volunteer\/activities\/([^/]+)$/);
+    if (volunteerActivityMatch) {
+      const activityId = volunteerActivityMatch[1];
+      if (method === 'GET') {
+        const detail = await volunteerService.getActivityDetail(activityId);
+        if (!detail) return jsonResponse(404, { error: 'Activity not found' }, responseOptions);
+        return jsonResponse(200, detail, responseOptions);
+      }
+      if (method === 'DELETE') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        await volunteerService.cancelActivity(activityId, principal.employeeId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // Volunteer: register / cancel registration
+    const volunteerRegisterMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/register$/
+    );
+    if (volunteerRegisterMatch) {
+      const activityId = volunteerRegisterMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      if (method === 'POST') {
+        await volunteerService.register(activityId, principal.employeeId);
+        return jsonResponse(201, { ok: true }, responseOptions);
+      }
+      if (method === 'DELETE') {
+        await volunteerService.cancelRegistration(activityId, principal.employeeId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // Volunteer: self-scan check-in
+    const volunteerCheckInMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/check-in$/
+    );
+    if (volunteerCheckInMatch && method === 'POST') {
+      const activityId = volunteerCheckInMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await volunteerService.selfScanCheckIn(
+        activityId,
+        body.activityQrPayload as string,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Volunteer: organizer scan check-in
+    const volunteerScanCheckInMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/scan-check-in$/
+    );
+    if (volunteerScanCheckInMatch && method === 'POST') {
+      const activityId = volunteerScanCheckInMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await volunteerService.organizerScanCheckIn(
+        activityId,
+        body.employeeId as string,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Volunteer: report
+    const volunteerReportMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/report$/
+    );
+    if (volunteerReportMatch && method === 'GET') {
+      const activityId = volunteerReportMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const report = await volunteerService.getReport(activityId);
+      return jsonResponse(200, report, responseOptions);
+    }
+
+    // Volunteer: export CSV
+    const volunteerExportMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/report\/export$/
+    );
+    if (volunteerExportMatch && method === 'GET') {
+      const activityId = volunteerExportMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const csv = await volunteerService.exportCsv(activityId);
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': `attachment; filename="volunteer-${activityId}.csv"`,
+        },
+        body: csv,
+      };
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);

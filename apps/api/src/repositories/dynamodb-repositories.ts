@@ -9,6 +9,8 @@ import {
   TransactWriteCommand
 } from '@aws-sdk/lib-dynamodb';
 import { RefreshSessionRecord } from '../domain/auth.js';
+import { AdminAccountRecord } from '../domain/admin-auth.js';
+import { AdminAccountRepository } from './admin-repository.js';
 import {
   BatchInviteJobRecord,
   BindingSessionRecord,
@@ -488,6 +490,24 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
     return record;
   }
 
+  async listByTenant(tenantId: string): Promise<EmployeeBindingRecord[]> {
+    const response = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+        ExpressionAttributeValues: {
+          ':pk': `TENANT#${tenantId}`,
+          ':skPrefix': 'BINDING#'
+        }
+      })
+    );
+
+    return (response.Items ?? [])
+      .map(item => stripMetadata<EmployeeBindingRecord>(item as Record<string, unknown>))
+      .filter((r): r is EmployeeBindingRecord => r !== null)
+      .map(normalizeEmployeeBindingRecord);
+  }
+
   async upsert(record: EmployeeBindingRecord): Promise<void> {
     const normalized = normalizeEmployeeBindingRecord(record);
     await this.client.send(
@@ -906,5 +926,76 @@ export class DynamoDbAuditEventRepository implements AuditEventRepository {
     return asArray(response.Items as Record<string, unknown>[] | undefined)
       .map((item) => stripMetadata<AuditEventRecord>(item))
       .filter((item): item is AuditEventRecord => item !== null);
+  }
+}
+
+export class DynamoDbAdminAccountRepository implements AdminAccountRepository {
+  constructor(
+    private readonly client: DynamoDBDocumentClient,
+    private readonly tableName: string
+  ) {}
+
+  async create(record: AdminAccountRecord): Promise<void> {
+    await this.client.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: {
+                pk: `ADMIN#${record.adminId}`,
+                sk: 'PROFILE',
+                entityType: 'ADMIN_ACCOUNT',
+                ...record
+              },
+              ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+            }
+          },
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: {
+                pk: `ADMIN_EMAIL#${record.email.toLowerCase()}`,
+                sk: 'LOOKUP',
+                entityType: 'ADMIN_EMAIL_LOOKUP',
+                adminId: record.adminId
+              },
+              ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+            }
+          }
+        ]
+      })
+    );
+  }
+
+  async findByEmail(email: string): Promise<AdminAccountRecord | null> {
+    const lookup = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: {
+          pk: `ADMIN_EMAIL#${email.toLowerCase()}`,
+          sk: 'LOOKUP'
+        }
+      })
+    );
+
+    const adminId = (lookup.Item as { adminId?: string } | undefined)?.adminId;
+    if (!adminId) return null;
+
+    return this.findById(adminId);
+  }
+
+  async findById(adminId: string): Promise<AdminAccountRecord | null> {
+    const response = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: {
+          pk: `ADMIN#${adminId}`,
+          sk: 'PROFILE'
+        }
+      })
+    );
+
+    return stripMetadata<AdminAccountRecord>(response.Item as Record<string, unknown> | undefined);
   }
 }

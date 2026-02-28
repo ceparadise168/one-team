@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { VolunteerService } from './volunteer-service.js';
 import { InMemoryVolunteerRepository } from '../repositories/volunteer-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
-import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
+import { ConflictError, ValidationError } from '../errors.js';
 
 function createContext() {
   const volunteerRepo = new InMemoryVolunteerRepository();

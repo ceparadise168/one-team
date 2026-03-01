@@ -20,6 +20,7 @@ export function ActivityDetail() {
   }
 
   const { activity, registrationCount } = detail;
+  const isCreator = Boolean(employeeId && activity.createdBy === employeeId);
 
   async function handleRegister() {
     setActionLoading(true);
@@ -78,7 +79,9 @@ export function ActivityDetail() {
     }
   }
 
-  const isCreator = employeeId && activity.createdBy === employeeId;
+  const selfScanQrUrl = activity.selfScanPayload
+    ? `https://quickchart.io/qr?text=${encodeURIComponent(activity.selfScanPayload)}&size=300`
+    : null;
 
   return (
     <div style={styles.container}>
@@ -104,7 +107,11 @@ export function ActivityDetail() {
         </div>
         <div style={styles.infoItem}>
           <span style={styles.infoLabel}>名額</span>
-          <span>{activity.capacity ? `${registrationCount}/${activity.capacity}` : `${registrationCount} (無限制)`}</span>
+          <span>
+            {activity.capacity
+              ? `${registrationCount}/${activity.capacity}`
+              : `${registrationCount} (無限制)`}
+          </span>
         </div>
         <div style={styles.infoItem}>
           <span style={styles.infoLabel}>打卡方式</span>
@@ -114,13 +121,38 @@ export function ActivityDetail() {
 
       {actionMessage && <p style={styles.message}>{actionMessage}</p>}
 
+      {/* Creator: QR display for self-scan activities */}
+      {isCreator && activity.checkInMode === 'self-scan' && selfScanQrUrl && (
+        <div style={styles.qrSection}>
+          <h3 style={styles.qrTitle}>活動 QR Code</h3>
+          <p style={styles.qrDesc}>讓參加者掃描此 QR Code 來打卡</p>
+          <img src={selfScanQrUrl} alt="Activity QR Code" style={styles.qrImage} />
+        </div>
+      )}
+
+      {/* Creator: scan button for organizer-scan activities */}
+      {isCreator && activity.checkInMode === 'organizer-scan' && (
+        <Link
+          to={`/volunteer/${activityId}/scan`}
+          style={{ ...styles.primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 16 }}
+        >
+          掃碼打卡
+        </Link>
+      )}
+
+      {/* Participant: self-scan check-in link */}
+      {!isCreator && activity.checkInMode === 'self-scan' && activity.status === 'OPEN' && (
+        <Link
+          to={`/volunteer/${activityId}/check-in`}
+          style={{ ...styles.primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 16 }}
+        >
+          掃碼打卡
+        </Link>
+      )}
+
       {activity.status === 'OPEN' && (
         <div style={styles.actions}>
-          <button
-            onClick={handleRegister}
-            disabled={actionLoading}
-            style={styles.primaryBtn}
-          >
+          <button onClick={handleRegister} disabled={actionLoading} style={styles.primaryBtn}>
             報名參加
           </button>
           <button
@@ -135,14 +167,12 @@ export function ActivityDetail() {
 
       {isCreator && (
         <div style={styles.actions}>
-          <Link
-            to={`/volunteer/${activityId}/scan`}
-            style={{ ...styles.primaryBtn, textAlign: 'center', textDecoration: 'none' }}
-          >
-            掃碼打卡
-          </Link>
           {activity.status === 'OPEN' && (
-            <button onClick={handleCancelActivity} disabled={actionLoading} style={styles.dangerBtn}>
+            <button
+              onClick={handleCancelActivity}
+              disabled={actionLoading}
+              style={styles.dangerBtn}
+            >
               取消活動
             </button>
           )}
@@ -157,26 +187,59 @@ const styles: Record<string, React.CSSProperties> = {
   backLink: { color: '#1a73e8', textDecoration: 'none', fontSize: 14 },
   title: { fontSize: 22, margin: '12px 0 8px 0' },
   statusBadge: {
-    display: 'inline-block', padding: '2px 10px', borderRadius: 4,
-    backgroundColor: '#e8f5e9', color: '#2e7d32', fontSize: 12, fontWeight: 'bold',
+    display: 'inline-block',
+    padding: '2px 10px',
+    borderRadius: 4,
+    backgroundColor: '#e8f5e9',
+    color: '#2e7d32',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   desc: { color: '#555', lineHeight: 1.5 },
   infoGrid: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 },
-  infoItem: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' },
+  infoItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '8px 0',
+    borderBottom: '1px solid #f0f0f0',
+  },
   infoLabel: { color: '#999', fontSize: 14 },
   actions: { display: 'flex', gap: 8, marginTop: 16 },
   primaryBtn: {
-    flex: 1, padding: '12px 0', backgroundColor: '#1DB446', color: 'white',
-    border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 'bold', cursor: 'pointer',
+    flex: 1,
+    padding: '12px 0',
+    backgroundColor: '#1DB446',
+    color: 'white',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 'bold',
+    cursor: 'pointer',
   },
   secondaryBtn: {
-    flex: 1, padding: '12px 0', backgroundColor: '#f5f5f5', color: '#333',
-    border: '1px solid #ddd', borderRadius: 8, fontSize: 15, cursor: 'pointer',
+    flex: 1,
+    padding: '12px 0',
+    backgroundColor: '#f5f5f5',
+    color: '#333',
+    border: '1px solid #ddd',
+    borderRadius: 8,
+    fontSize: 15,
+    cursor: 'pointer',
   },
   dangerBtn: {
-    flex: 1, padding: '12px 0', backgroundColor: '#fff', color: '#e74c3c',
-    border: '1px solid #e74c3c', borderRadius: 8, fontSize: 15, cursor: 'pointer',
+    flex: 1,
+    padding: '12px 0',
+    backgroundColor: '#fff',
+    color: '#e74c3c',
+    border: '1px solid #e74c3c',
+    borderRadius: 8,
+    fontSize: 15,
+    cursor: 'pointer',
   },
   message: { textAlign: 'center', color: '#1a73e8', marginTop: 12 },
   error: { color: '#e74c3c' },
+  qrSection: { textAlign: 'center', marginTop: 24, padding: 16, backgroundColor: '#f9f9f9', borderRadius: 12 },
+  qrTitle: { fontSize: 16, margin: '0 0 4px 0' },
+  qrDesc: { fontSize: 13, color: '#666', margin: '0 0 12px 0' },
+  qrImage: { maxWidth: 250, width: '100%', borderRadius: 8 },
 };

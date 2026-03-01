@@ -88,7 +88,7 @@ export class PlatformStack extends Stack {
         AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
         VOLUNTEER_TABLE_NAME: `${prefix}-volunteer`,
         DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
-        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174' // overridden below with CloudFront domain
+        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174' // overridden below to include CloudFront domain
       }
     });
 
@@ -392,16 +392,17 @@ export class PlatformStack extends Stack {
       evaluationPeriods: 1
     });
 
-    const miniAppBucket = new s3.Bucket(this, 'MiniAppBucket', {
-      bucketName: `${prefix}-miniapp`,
+    // LIFF web app hosting (S3 + CloudFront)
+    const liffWebBucket = new s3.Bucket(this, 'LiffWebBucket', {
+      bucketName: `${prefix}-liff-web`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true
     });
 
-    const miniAppDistribution = new cloudfront.Distribution(this, 'MiniAppDistribution', {
+    const liffWebDistribution = new cloudfront.Distribution(this, 'LiffWebDistribution', {
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(miniAppBucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(liffWebBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
       },
       defaultRootObject: 'index.html',
@@ -419,24 +420,23 @@ export class PlatformStack extends Stack {
       ]
     });
 
-    apiRuntimeHandler.addEnvironment(
-      'MINI_APP_BASE_URL',
-      `https://${miniAppDistribution.distributionDomainName}`
-    );
+    const liffWebBaseUrl = `https://${liffWebDistribution.distributionDomainName}`;
+
+    apiRuntimeHandler.addEnvironment('LIFF_WEB_BASE_URL', liffWebBaseUrl);
 
     apiRuntimeHandler.addEnvironment(
       'CORS_ALLOWED_ORIGINS',
-      `http://localhost:5173,http://localhost:5174,https://${miniAppDistribution.distributionDomainName}`
+      `http://localhost:5173,http://localhost:5174,${liffWebBaseUrl}`
     );
 
-    new CfnOutput(this, 'MiniAppDistributionDomain', {
-      value: miniAppDistribution.distributionDomainName,
-      description: 'Mini App CloudFront domain'
+    new CfnOutput(this, 'LiffWebDistributionDomain', {
+      value: liffWebDistribution.distributionDomainName,
+      description: 'LIFF web app CloudFront domain'
     });
 
-    new CfnOutput(this, 'MiniAppBucketName', {
-      value: miniAppBucket.bucketName,
-      description: 'Mini App S3 bucket for deployment'
+    new CfnOutput(this, 'LiffWebBucketName', {
+      value: liffWebBucket.bucketName,
+      description: 'LIFF web app S3 bucket for deployment'
     });
 
     new CfnOutput(this, 'ApiUrl', {

@@ -408,7 +408,7 @@ const webhookEventService = new WebhookEventService(
   authSessionService,
   {
     now: () => new Date(),
-    miniAppBaseUrl: process.env.MINI_APP_BASE_URL,
+    liffWebBaseUrl: process.env.LIFF_WEB_BASE_URL,
   }
 );
 

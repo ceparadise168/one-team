@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface WebhookEventServiceOptions {
   now: () => Date;
-  miniAppBaseUrl?: string;
+  liffWebBaseUrl?: string;
 }
 
 export class WebhookEventService {
@@ -294,7 +294,7 @@ export class WebhookEventService {
       messages: [
         buildServicesMenuFlexMessage({
           isAdmin,
-          miniAppBaseUrl: this.options.miniAppBaseUrl,
+          liffWebBaseUrl: this.options.liffWebBaseUrl,
           tenantId,
           accessToken,
         }),

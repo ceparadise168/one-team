@@ -540,11 +540,11 @@ export function buildDigitalIdFlexMessage(employeeId: string): LineMessage {
 
 export function buildServicesMenuFlexMessage(options?: {
   isAdmin?: boolean;
-  miniAppBaseUrl?: string;
+  liffWebBaseUrl?: string;
   tenantId?: string;
   accessToken?: string;
 }): LineMessage {
-  const miniAppBase = options?.miniAppBaseUrl ?? 'https://miniapp.line.me/';
+  const liffWebBase = options?.liffWebBaseUrl ?? 'https://miniapp.line.me/';
   const enabledServices = ['volunteer'];
 
   const allServices = [
@@ -632,8 +632,8 @@ export function buildServicesMenuFlexMessage(options?: {
                   type: 'uri',
                   label: svc.label,
                   uri: options?.accessToken
-                    ? `${miniAppBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}`
-                    : `${miniAppBase}${svc.path}`,
+                    ? `${liffWebBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}`
+                    : `${liffWebBase}${svc.path}`,
                 }
               : {
                   type: 'postback',

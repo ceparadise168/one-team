@@ -718,6 +718,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           title: body.title as string,
           description: body.description as string,
           location: body.location as string,
+          city: (body.city as string) ?? null,
           activityDate: body.activityDate as string,
           startTime: body.startTime as string,
           endTime: body.endTime as string,

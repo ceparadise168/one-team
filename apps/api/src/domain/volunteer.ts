@@ -4,6 +4,7 @@ export interface VolunteerActivity {
   title: string;
   description: string;
   location: string;
+  city: string | null;
   activityDate: string;
   startTime: string;
   endTime: string;

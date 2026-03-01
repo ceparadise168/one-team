@@ -25,6 +25,7 @@ export class VolunteerService {
     title: string;
     description: string;
     location: string;
+    city: string | null;
     activityDate: string;
     startTime: string;
     endTime: string;
@@ -51,6 +52,7 @@ export class VolunteerService {
       title: input.title,
       description: input.description,
       location: input.location,
+      city: input.city,
       activityDate: input.activityDate,
       startTime: input.startTime,
       endTime: input.endTime,

@@ -19,7 +19,7 @@ export function ActivityDetail() {
     return <div style={styles.container}><p style={styles.error}>活動不存在</p></div>;
   }
 
-  const { activity, registrationCount, myRegistration } = detail;
+  const { activity, registrationCount, myRegistration, myCheckIn } = detail;
   const isCreator = Boolean(employeeId && activity.createdBy === employeeId);
   const isRegistered = myRegistration?.status === 'REGISTERED';
 
@@ -41,7 +41,12 @@ export function ActivityDetail() {
       setActionMessage('報名成功！');
       refresh();
     } catch (e) {
-      setActionMessage((e as Error).message);
+      const errorMsg = (e as Error).message;
+      if (errorMsg.includes('full')) {
+        setActionMessage('已額滿，無法報名');
+      } else {
+        setActionMessage(errorMsg);
+      }
     } finally {
       setActionLoading(false);
     }
@@ -110,6 +115,12 @@ export function ActivityDetail() {
           <span style={styles.infoLabel}>地點</span>
           <span>{activity.location}</span>
         </div>
+        {activity.city && (
+          <div style={styles.infoItem}>
+            <span style={styles.infoLabel}>縣市</span>
+            <span>{activity.city}</span>
+          </div>
+        )}
         <div style={styles.infoItem}>
           <span style={styles.infoLabel}>名額</span>
           <span>
@@ -124,10 +135,13 @@ export function ActivityDetail() {
         </div>
       </div>
 
-      {/* Registration status badge */}
+      {/* Registration and check-in status badges */}
       {isRegistered && (
-        <div style={styles.registeredBadge}>
-          已報名
+        <div style={{ marginTop: 12 }}>
+          <span style={styles.registeredBadge}>已報名</span>
+          {myCheckIn && (
+            <span style={styles.checkedInBadge}>已打卡</span>
+          )}
         </div>
       )}
 
@@ -149,6 +163,16 @@ export function ActivityDetail() {
           style={{ ...styles.primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 16 }}
         >
           掃碼打卡
+        </Link>
+      )}
+
+      {/* Creator: report link */}
+      {isCreator && (
+        <Link
+          to={`/volunteer/${activityId}/report`}
+          style={{ ...styles.secondaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}
+        >
+          查看報名名單
         </Link>
       )}
 
@@ -211,11 +235,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   registeredBadge: {
     display: 'inline-block',
-    marginTop: 12,
     padding: '6px 16px',
     borderRadius: 20,
     backgroundColor: '#e3f2fd',
     color: '#1565c0',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  checkedInBadge: {
+    display: 'inline-block',
+    marginLeft: 8,
+    padding: '6px 16px',
+    borderRadius: 20,
+    backgroundColor: '#e8f5e9',
+    color: '#2e7d32',
     fontSize: 14,
     fontWeight: 'bold',
   },

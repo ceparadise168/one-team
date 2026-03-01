@@ -114,6 +114,15 @@ export function CheckIn({ mode }: Props) {
         </div>
       )}
 
+      {status === 'success' && (
+        <Link
+          to={`/volunteer/${activityId}`}
+          style={{ ...styles.retryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 12 }}
+        >
+          返回活動詳情
+        </Link>
+      )}
+
       {status === 'error' && (
         <div style={styles.errorBox}>
           <p style={styles.errorText}>{message}</p>

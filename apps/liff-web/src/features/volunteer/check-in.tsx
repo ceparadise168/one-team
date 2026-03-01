@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
+import { QrScanner } from '../../components/qr-scanner';
 
 interface Props {
   mode: 'organizer' | 'self';
@@ -9,95 +10,86 @@ interface Props {
 export function CheckIn({ mode }: Props) {
   const { apiBaseUrl, accessToken } = useAuth();
   const { activityId } = useParams<{ activityId: string }>();
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'scanning' | 'success' | 'error'>('scanning');
   const [message, setMessage] = useState('');
-  const [scanning, setScanning] = useState(false);
+  const [scannerActive, setScannerActive] = useState(true);
 
-  async function handleOrganizerScan() {
-    setScanning(true);
-    setStatus('idle');
+  const handleOrganizerScan = useCallback(
+    async (decodedText: string) => {
+      setScannerActive(false);
 
-    try {
-      // Use LIFF scanCodeV2 if available
-      const liff = (window as unknown as { liff?: { scanCodeV2: () => Promise<{ value: string }> } }).liff;
-      if (!liff?.scanCodeV2) {
-        throw new Error('請在 LINE 應用程式中開啟此頁面以使用掃碼功能');
-      }
+      try {
+        const res = await fetch(
+          `${apiBaseUrl}/v1/volunteer/activities/${activityId}/scan-check-in-qr`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ digitalIdPayload: decodedText }),
+          }
+        );
 
-      const result = await liff.scanCodeV2();
-      const scannedPayload = result.value;
-
-      // Parse employee ID from scanned digital ID QR
-      const res = await fetch(
-        `${apiBaseUrl}/v1/volunteer/activities/${activityId}/scan-check-in`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ employeeId: scannedPayload }),
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || '打卡失敗');
         }
-      );
 
-      if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || '打卡失敗');
+        setStatus('success');
+        setMessage(`員工 ${data.employeeId} 打卡成功！`);
+      } catch (e) {
+        setStatus('error');
+        setMessage((e as Error).message);
       }
+    },
+    [apiBaseUrl, accessToken, activityId]
+  );
 
-      setStatus('success');
-      setMessage(`員工 ${scannedPayload} 打卡成功！`);
-    } catch (e) {
-      setStatus('error');
-      setMessage((e as Error).message);
-    } finally {
-      setScanning(false);
-    }
-  }
+  const handleSelfScan = useCallback(
+    async (decodedText: string) => {
+      setScannerActive(false);
 
-  async function handleSelfScan() {
-    setScanning(true);
-    setStatus('idle');
+      try {
+        const res = await fetch(
+          `${apiBaseUrl}/v1/volunteer/activities/${activityId}/check-in`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ activityQrPayload: decodedText }),
+          }
+        );
 
-    try {
-      const liff = (window as unknown as { liff?: { scanCodeV2: () => Promise<{ value: string }> } }).liff;
-      if (!liff?.scanCodeV2) {
-        throw new Error('請在 LINE 應用程式中開啟此頁面以使用掃碼功能');
-      }
-
-      const result = await liff.scanCodeV2();
-      const qrPayload = result.value;
-
-      const res = await fetch(
-        `${apiBaseUrl}/v1/volunteer/activities/${activityId}/check-in`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ activityQrPayload: qrPayload }),
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || '打卡失敗');
         }
-      );
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '打卡失敗');
+        setStatus('success');
+        setMessage('打卡成功！');
+      } catch (e) {
+        setStatus('error');
+        setMessage((e as Error).message);
       }
+    },
+    [apiBaseUrl, accessToken, activityId]
+  );
 
-      setStatus('success');
-      setMessage('打卡成功！');
-    } catch (e) {
-      setStatus('error');
-      setMessage((e as Error).message);
-    } finally {
-      setScanning(false);
-    }
+  function handleScanAgain() {
+    setStatus('scanning');
+    setMessage('');
+    setScannerActive(true);
   }
 
   return (
     <div style={styles.container}>
-      <Link to={`/volunteer/${activityId}`} style={styles.backLink}>← 返回活動</Link>
+      <Link to={`/volunteer/${activityId}`} style={styles.backLink}>
+        ← 返回活動
+      </Link>
 
       <h1 style={styles.title}>
         {mode === 'organizer' ? '主辦掃碼打卡' : '自助掃碼打卡'}
@@ -108,6 +100,13 @@ export function CheckIn({ mode }: Props) {
           ? '掃描參加者的數位員工證 QR Code 以完成打卡'
           : '掃描活動的 QR Code 以完成打卡'}
       </p>
+
+      {status === 'scanning' && (
+        <QrScanner
+          onScan={mode === 'organizer' ? handleOrganizerScan : handleSelfScan}
+          active={scannerActive}
+        />
+      )}
 
       {status === 'success' && (
         <div style={styles.successBox}>
@@ -121,20 +120,15 @@ export function CheckIn({ mode }: Props) {
         </div>
       )}
 
-      <button
-        onClick={mode === 'organizer' ? handleOrganizerScan : handleSelfScan}
-        disabled={scanning}
-        style={styles.scanBtn}
-      >
-        {scanning ? '掃碼中...' : '開始掃碼'}
-      </button>
+      {status !== 'scanning' && mode === 'organizer' && (
+        <button onClick={handleScanAgain} style={styles.scanAgainBtn}>
+          掃碼下一位
+        </button>
+      )}
 
-      {mode === 'organizer' && status === 'success' && (
-        <button
-          onClick={handleOrganizerScan}
-          style={styles.scanAgainBtn}
-        >
-          繼續掃碼下一位
+      {status === 'error' && (
+        <button onClick={handleScanAgain} style={styles.retryBtn}>
+          重新掃碼
         </button>
       )}
     </div>
@@ -147,20 +141,41 @@ const styles: Record<string, React.CSSProperties> = {
   title: { fontSize: 22, margin: '12px 0 8px 0' },
   desc: { color: '#666', fontSize: 14, marginBottom: 24 },
   successBox: {
-    padding: 16, backgroundColor: '#e8f5e9', borderRadius: 8, marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#e8f5e9',
+    borderRadius: 8,
+    marginBottom: 16,
   },
   successText: { color: '#2e7d32', margin: 0, textAlign: 'center', fontWeight: 'bold' },
   errorBox: {
-    padding: 16, backgroundColor: '#fbe9e7', borderRadius: 8, marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#fbe9e7',
+    borderRadius: 8,
+    marginBottom: 16,
   },
   errorText: { color: '#c62828', margin: 0, textAlign: 'center' },
-  scanBtn: {
-    width: '100%', padding: '16px 0', backgroundColor: '#1DB446', color: 'white',
-    border: 'none', borderRadius: 12, fontSize: 18, fontWeight: 'bold', cursor: 'pointer',
-  },
   scanAgainBtn: {
-    width: '100%', padding: '14px 0', backgroundColor: '#fff', color: '#1DB446',
-    border: '2px solid #1DB446', borderRadius: 12, fontSize: 16, fontWeight: 'bold',
-    cursor: 'pointer', marginTop: 12,
+    width: '100%',
+    padding: '14px 0',
+    backgroundColor: '#1DB446',
+    color: 'white',
+    border: 'none',
+    borderRadius: 12,
+    fontSize: 16,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginTop: 12,
+  },
+  retryBtn: {
+    width: '100%',
+    padding: '14px 0',
+    backgroundColor: '#fff',
+    color: '#1a73e8',
+    border: '2px solid #1a73e8',
+    borderRadius: 12,
+    fontSize: 16,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginTop: 12,
   },
 };

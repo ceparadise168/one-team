@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
+import { CITIES } from '../../constants';
 
 export function CreateActivity() {
   const { apiBaseUrl, accessToken } = useAuth();
@@ -11,6 +12,7 @@ export function CreateActivity() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [city, setCity] = useState('');
   const [activityDate, setActivityDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -33,6 +35,7 @@ export function CreateActivity() {
           title,
           description,
           location,
+          city: city || null,
           activityDate,
           startTime,
           endTime,
@@ -90,6 +93,20 @@ export function CreateActivity() {
             onChange={(e) => setLocation(e.target.value)}
             style={styles.input}
           />
+        </label>
+
+        <label style={styles.label}>
+          縣市
+          <select
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            style={styles.input}
+          >
+            <option value="">不指定</option>
+            {CITIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </label>
 
         <label style={styles.label}>

@@ -162,8 +162,8 @@ export function ActivityDetail() {
         </Link>
       )}
 
-      {/* Registration buttons — only for non-creators, when activity is OPEN */}
-      {activity.status === 'OPEN' && !isCreator && (
+      {/* Registration buttons — anyone can register, including the creator */}
+      {activity.status === 'OPEN' && (
         <div style={styles.actions}>
           {isRegistered ? (
             <button

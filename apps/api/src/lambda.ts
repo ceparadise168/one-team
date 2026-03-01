@@ -801,6 +801,34 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
+    // Volunteer: organizer scan check-in via digital ID QR payload
+    const volunteerScanCheckInQrMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/scan-check-in-qr$/
+    );
+    if (volunteerScanCheckInQrMatch && method === 'POST') {
+      const activityId = volunteerScanCheckInQrMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      const digitalIdPayload = body.digitalIdPayload as string;
+      if (!digitalIdPayload) {
+        return jsonResponse(400, { error: 'digitalIdPayload is required' }, responseOptions);
+      }
+      const verification = await digitalIdService.verifyDynamicPayload(digitalIdPayload);
+      if (!verification.valid || !verification.employeeId) {
+        return jsonResponse(
+          400,
+          { error: `Digital ID verification failed: ${verification.reasonCode}` },
+          responseOptions
+        );
+      }
+      await volunteerService.organizerScanCheckIn(
+        activityId,
+        verification.employeeId,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true, employeeId: verification.employeeId }, responseOptions);
+    }
+
     // Volunteer: report
     const volunteerReportMatch = path.match(
       /^\/v1\/volunteer\/activities\/([^/]+)\/report$/

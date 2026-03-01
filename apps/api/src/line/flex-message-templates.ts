@@ -543,6 +543,7 @@ export function buildServicesMenuFlexMessage(options?: {
   liffWebBaseUrl?: string;
   tenantId?: string;
   accessToken?: string;
+  refreshToken?: string;
 }): LineMessage {
   const liffWebBase = options?.liffWebBaseUrl ?? 'https://miniapp.line.me/';
   const enabledServices = ['volunteer'];
@@ -632,7 +633,7 @@ export function buildServicesMenuFlexMessage(options?: {
                   type: 'uri',
                   label: svc.label,
                   uri: options?.accessToken
-                    ? `${liffWebBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}`
+                    ? `${liffWebBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}${options.refreshToken ? `&refreshToken=${options.refreshToken}` : ''}`
                     : `${liffWebBase}${svc.path}`,
                 }
               : {

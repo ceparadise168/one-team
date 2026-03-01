@@ -279,6 +279,7 @@ export class WebhookEventService {
     const isAdmin = await this.checkAdminPermission(tenantId, lineUserId);
 
     let accessToken: string | undefined;
+    let refreshToken: string | undefined;
     if (binding && binding.accessStatus === 'APPROVED') {
       const tokens = await this.authSessionService.issueEmployeeSession({
         tenantId,
@@ -286,6 +287,7 @@ export class WebhookEventService {
         employeeId: binding.employeeId
       });
       accessToken = tokens.accessToken;
+      refreshToken = tokens.refreshToken;
     }
 
     await this.linePlatformClient.replyMessage({
@@ -297,6 +299,7 @@ export class WebhookEventService {
           liffWebBaseUrl: this.options.liffWebBaseUrl,
           tenantId,
           accessToken,
+          refreshToken,
         }),
       ]
     });

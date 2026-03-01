@@ -102,3 +102,39 @@ export function useMyActivities(apiBaseUrl: string, accessToken: string) {
 
   return { registrations, loading };
 }
+
+interface ReportData {
+  activity: VolunteerActivity;
+  registrations: Array<{
+    activityId: string;
+    employeeId: string;
+    registeredAt: string;
+    status: string;
+  }>;
+  checkIns: Array<{
+    employeeId: string;
+    checkedInAt: string;
+    mode: string;
+  }>;
+}
+
+export function useReport(apiBaseUrl: string, accessToken: string, activityId: string) {
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}/report`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to load report');
+        return r.json();
+      })
+      .then((data) => setReport(data))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [apiBaseUrl, accessToken, activityId]);
+
+  return { report, loading, error };
+}

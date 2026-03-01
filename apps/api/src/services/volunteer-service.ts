@@ -82,16 +82,20 @@ export class VolunteerService {
     activity: VolunteerActivity;
     registrationCount: number;
     myRegistration?: { status: string; registeredAt: string } | null;
+    myCheckIn?: { checkedInAt: string; mode: string } | null;
   } | null> {
     const activity = await this.volunteerRepo.findActivityById(activityId);
     if (!activity) return null;
     const registrationCount = await this.volunteerRepo.countActiveRegistrations(activityId);
     let myRegistration: { status: string; registeredAt: string } | null | undefined;
+    let myCheckIn: { checkedInAt: string; mode: string } | null | undefined;
     if (employeeId) {
       const reg = await this.volunteerRepo.findRegistration(activityId, employeeId);
       myRegistration = reg ? { status: reg.status, registeredAt: reg.registeredAt } : null;
+      const checkIn = await this.volunteerRepo.findCheckIn(activityId, employeeId);
+      myCheckIn = checkIn ? { checkedInAt: checkIn.checkedInAt, mode: checkIn.mode } : null;
     }
-    return { activity, registrationCount, myRegistration };
+    return { activity, registrationCount, myRegistration, myCheckIn };
   }
 
   async cancelActivity(activityId: string, employeeId: string): Promise<void> {

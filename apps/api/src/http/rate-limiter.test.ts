@@ -76,7 +76,11 @@ describe('classifyRoute', () => {
 
   it('classifies public routes', () => {
     assert.equal(classifyRoute('/v1/public/bind/start'), 'public');
-    assert.equal(classifyRoute('/v1/liff/tenants/t1/me/profile'), 'public');
+  });
+
+  it('classifies liff and volunteer routes', () => {
+    assert.equal(classifyRoute('/v1/liff/tenants/t1/me/profile'), 'liff');
+    assert.equal(classifyRoute('/v1/volunteer/activities'), 'liff');
   });
 });
 

@@ -1,12 +1,9 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../auth-context';
 import { useActivities } from './use-volunteer';
 
-interface Props {
-  apiBaseUrl: string;
-  accessToken: string;
-}
-
-export function ActivityList({ apiBaseUrl, accessToken }: Props) {
+export function ActivityList() {
+  const { apiBaseUrl, accessToken } = useAuth();
   const { activities, loading, error } = useActivities(apiBaseUrl, accessToken);
 
   if (loading) return <div style={styles.container}><p>載入中...</p></div>;

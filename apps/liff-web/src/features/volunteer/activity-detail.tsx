@@ -1,14 +1,10 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '../../auth-context';
 import { useActivityDetail } from './use-volunteer';
 
-interface Props {
-  apiBaseUrl: string;
-  accessToken: string;
-  employeeId?: string;
-}
-
-export function ActivityDetail({ apiBaseUrl, accessToken, employeeId }: Props) {
+export function ActivityDetail() {
+  const { apiBaseUrl, accessToken, employeeId } = useAuth();
   const { activityId } = useParams<{ activityId: string }>();
   const { detail, loading, error, refresh } = useActivityDetail(
     apiBaseUrl,

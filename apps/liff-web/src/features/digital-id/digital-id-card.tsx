@@ -1,15 +1,13 @@
 import { useMemo } from 'react';
+import { useAuth } from '../../auth-context';
 import { useDigitalId } from './use-digital-id.js';
 
-export function DigitalIdCard(props: {
-  apiBaseUrl: string;
-  tenantId: string;
-  accessToken: string;
-}) {
+export function DigitalIdCard() {
+  const { apiBaseUrl, tenantId, accessToken } = useAuth();
   const { state, refreshNow } = useDigitalId({
-    apiBaseUrl: props.apiBaseUrl,
-    tenantId: props.tenantId,
-    accessToken: props.accessToken
+    apiBaseUrl,
+    tenantId,
+    accessToken,
   });
 
   const expiresAt = useMemo(() => {

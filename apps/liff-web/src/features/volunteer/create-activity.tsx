@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../../auth-context';
 
-interface Props {
-  apiBaseUrl: string;
-  accessToken: string;
-}
-
-export function CreateActivity({ apiBaseUrl, accessToken }: Props) {
+export function CreateActivity() {
+  const { apiBaseUrl, accessToken } = useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

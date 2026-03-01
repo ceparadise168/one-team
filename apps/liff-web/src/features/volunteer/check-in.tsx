@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '../../auth-context';
 
 interface Props {
-  apiBaseUrl: string;
-  accessToken: string;
   mode: 'organizer' | 'self';
 }
 
-export function CheckIn({ apiBaseUrl, accessToken, mode }: Props) {
+export function CheckIn({ mode }: Props) {
+  const { apiBaseUrl, accessToken } = useAuth();
   const { activityId } = useParams<{ activityId: string }>();
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');

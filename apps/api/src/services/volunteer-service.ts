@@ -74,12 +74,22 @@ export class VolunteerService {
   }
 
   async getActivityDetail(
-    activityId: string
-  ): Promise<{ activity: VolunteerActivity; registrationCount: number } | null> {
+    activityId: string,
+    employeeId?: string
+  ): Promise<{
+    activity: VolunteerActivity;
+    registrationCount: number;
+    myRegistration?: { status: string; registeredAt: string } | null;
+  } | null> {
     const activity = await this.volunteerRepo.findActivityById(activityId);
     if (!activity) return null;
     const registrationCount = await this.volunteerRepo.countActiveRegistrations(activityId);
-    return { activity, registrationCount };
+    let myRegistration: { status: string; registeredAt: string } | null | undefined;
+    if (employeeId) {
+      const reg = await this.volunteerRepo.findRegistration(activityId, employeeId);
+      myRegistration = reg ? { status: reg.status, registeredAt: reg.registeredAt } : null;
+    }
+    return { activity, registrationCount, myRegistration };
   }
 
   async cancelActivity(activityId: string, employeeId: string): Promise<void> {

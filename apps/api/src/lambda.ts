@@ -741,7 +741,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (volunteerActivityMatch) {
       const activityId = volunteerActivityMatch[1];
       if (method === 'GET') {
-        const detail = await volunteerService.getActivityDetail(activityId);
+        let employeeId: string | undefined;
+        try {
+          const principal = await requireEmployeePrincipal({ event, authSessionService });
+          employeeId = principal.employeeId;
+        } catch {
+          // Unauthenticated access is fine — just won't include myRegistration
+        }
+        const detail = await volunteerService.getActivityDetail(activityId, employeeId);
         if (!detail) return jsonResponse(404, { error: 'Activity not found' }, responseOptions);
         return jsonResponse(200, detail, responseOptions);
       }

@@ -19,8 +19,9 @@ export function ActivityDetail() {
     return <div style={styles.container}><p style={styles.error}>活動不存在</p></div>;
   }
 
-  const { activity, registrationCount } = detail;
+  const { activity, registrationCount, myRegistration } = detail;
   const isCreator = Boolean(employeeId && activity.createdBy === employeeId);
+  const isRegistered = myRegistration?.status === 'REGISTERED';
 
   async function handleRegister() {
     setActionLoading(true);
@@ -49,14 +50,18 @@ export function ActivityDetail() {
   async function handleCancelRegistration() {
     setActionLoading(true);
     try {
-      await fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}/register`, {
+      const res = await fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}/register`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '取消失敗');
+      }
       setActionMessage('已取消報名');
       refresh();
-    } catch {
-      setActionMessage('取消失敗');
+    } catch (e) {
+      setActionMessage((e as Error).message);
     } finally {
       setActionLoading(false);
     }
@@ -119,6 +124,13 @@ export function ActivityDetail() {
         </div>
       </div>
 
+      {/* Registration status badge */}
+      {isRegistered && (
+        <div style={styles.registeredBadge}>
+          已報名
+        </div>
+      )}
+
       {actionMessage && <p style={styles.message}>{actionMessage}</p>}
 
       {/* Creator: QR display for self-scan activities */}
@@ -150,32 +162,34 @@ export function ActivityDetail() {
         </Link>
       )}
 
-      {activity.status === 'OPEN' && (
+      {/* Registration buttons — only for non-creators, when activity is OPEN */}
+      {activity.status === 'OPEN' && !isCreator && (
         <div style={styles.actions}>
-          <button onClick={handleRegister} disabled={actionLoading} style={styles.primaryBtn}>
-            報名參加
-          </button>
-          <button
-            onClick={handleCancelRegistration}
-            disabled={actionLoading}
-            style={styles.secondaryBtn}
-          >
-            取消報名
-          </button>
+          {isRegistered ? (
+            <button
+              onClick={handleCancelRegistration}
+              disabled={actionLoading}
+              style={styles.secondaryBtn}
+            >
+              取消報名
+            </button>
+          ) : (
+            <button onClick={handleRegister} disabled={actionLoading} style={styles.primaryBtn}>
+              報名參加
+            </button>
+          )}
         </div>
       )}
 
-      {isCreator && (
+      {isCreator && activity.status === 'OPEN' && (
         <div style={styles.actions}>
-          {activity.status === 'OPEN' && (
-            <button
-              onClick={handleCancelActivity}
-              disabled={actionLoading}
-              style={styles.dangerBtn}
-            >
-              取消活動
-            </button>
-          )}
+          <button
+            onClick={handleCancelActivity}
+            disabled={actionLoading}
+            style={styles.dangerBtn}
+          >
+            取消活動
+          </button>
         </div>
       )}
     </div>
@@ -193,6 +207,16 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: '#e8f5e9',
     color: '#2e7d32',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  registeredBadge: {
+    display: 'inline-block',
+    marginTop: 12,
+    padding: '6px 16px',
+    borderRadius: 20,
+    backgroundColor: '#e3f2fd',
+    color: '#1565c0',
+    fontSize: 14,
     fontWeight: 'bold',
   },
   desc: { color: '#555', lineHeight: 1.5 },

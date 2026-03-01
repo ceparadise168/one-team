@@ -19,6 +19,7 @@ interface VolunteerActivity {
 interface ActivityDetail {
   activity: VolunteerActivity;
   registrationCount: number;
+  myRegistration?: { status: string; registeredAt: string } | null;
 }
 
 interface Registration {

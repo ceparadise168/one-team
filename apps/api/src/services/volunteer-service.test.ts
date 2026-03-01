@@ -291,6 +291,9 @@ describe('VolunteerService — Registration', () => {
     const mine = await service.myActivities('E002');
     assert.equal(mine.length, 1);
     assert.equal(mine[0].activityId, id2);
+    assert.ok(mine[0].activity);
+    assert.equal(mine[0].activity!.title, 'B');
+    assert.equal(mine[0].checkedIn, false);
   });
 });
 

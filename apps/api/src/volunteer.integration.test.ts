@@ -120,7 +120,7 @@ test('integration: volunteer full flow — create, register, check-in, report, C
   });
   assert.equal(regRes.statusCode, 201);
 
-  // Step 5: Participant's my-activities includes this
+  // Step 5: Participant's my-activities includes activity details
   const myRes = await invokeLambda({
     method: 'GET',
     path: '/v1/volunteer/my-activities',
@@ -128,9 +128,13 @@ test('integration: volunteer full flow — create, register, check-in, report, C
   });
   assert.equal(myRes.statusCode, 200);
   const registrations = (
-    myRes.body as { registrations: Array<{ activityId: string }> }
+    myRes.body as { registrations: Array<{ activityId: string; activity: { title: string }; checkedIn: boolean }> }
   ).registrations;
   assert.ok(registrations.some((r) => r.activityId === activityId));
+  const myReg = registrations.find((r) => r.activityId === activityId)!;
+  assert.ok(myReg.activity);
+  assert.equal(myReg.activity.title, `Cleanup-${suffix}`);
+  assert.equal(myReg.checkedIn, false);
 
   // Step 6: Organizer scans participant's badge to check in
   const checkInRes = await invokeLambda({

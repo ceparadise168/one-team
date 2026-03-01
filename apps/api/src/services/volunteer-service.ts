@@ -138,9 +138,24 @@ export class VolunteerService {
     await this.volunteerRepo.updateRegistration(reg);
   }
 
-  async myActivities(employeeId: string): Promise<VolunteerRegistration[]> {
+  async myActivities(employeeId: string): Promise<
+    Array<
+      VolunteerRegistration & {
+        activity: VolunteerActivity | null;
+        checkedIn: boolean;
+      }
+    >
+  > {
     const registrations = await this.volunteerRepo.listRegistrationsByEmployee(employeeId);
-    return registrations.filter((r) => r.status === 'REGISTERED');
+    const active = registrations.filter((r) => r.status === 'REGISTERED');
+
+    return Promise.all(
+      active.map(async (reg) => {
+        const activity = await this.volunteerRepo.findActivityById(reg.activityId);
+        const checkIn = await this.volunteerRepo.findCheckIn(reg.activityId, reg.employeeId);
+        return { ...reg, activity, checkedIn: checkIn !== null };
+      })
+    );
   }
 
   async organizerScanCheckIn(

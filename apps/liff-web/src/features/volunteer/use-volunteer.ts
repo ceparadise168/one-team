@@ -5,6 +5,7 @@ interface VolunteerActivity {
   title: string;
   description: string;
   location: string;
+  city: string | null;
   activityDate: string;
   startTime: string;
   endTime: string;
@@ -20,6 +21,7 @@ interface ActivityDetail {
   activity: VolunteerActivity;
   registrationCount: number;
   myRegistration?: { status: string; registeredAt: string } | null;
+  myCheckIn?: { checkedInAt: string; mode: string } | null;
 }
 
 interface Registration {
@@ -29,7 +31,12 @@ interface Registration {
   status: 'REGISTERED' | 'CANCELLED';
 }
 
-export type { VolunteerActivity, ActivityDetail, Registration };
+interface EnrichedRegistration extends Registration {
+  activity: VolunteerActivity | null;
+  checkedIn: boolean;
+}
+
+export type { VolunteerActivity, ActivityDetail, Registration, EnrichedRegistration };
 
 export function useActivities(apiBaseUrl: string, accessToken: string) {
   const [activities, setActivities] = useState<VolunteerActivity[]>([]);
@@ -76,10 +83,14 @@ export function useActivityDetail(apiBaseUrl: string, accessToken: string, activ
 }
 
 export function useMyActivities(apiBaseUrl: string, accessToken: string) {
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [registrations, setRegistrations] = useState<EnrichedRegistration[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!accessToken) {
+      setLoading(false);
+      return;
+    }
     fetch(`${apiBaseUrl}/v1/volunteer/my-activities`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })

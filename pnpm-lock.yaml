@@ -91,6 +91,9 @@ importers:
       '@line/liff':
         specifier: ^2.27.3
         version: 2.27.3
+      html5-qrcode:
+        specifier: ^2.3.8
+        version: 2.3.8
       react:
         specifier: ^19.1.0
         version: 19.2.4
@@ -2107,6 +2110,9 @@ packages:
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
+
+  html5-qrcode@2.3.8:
+    resolution: {integrity: sha512-jsr4vafJhwoLVEDW3n1KvPnCCXWaQfRng0/EEYk1vNcQGcG/htAdhJX0be8YyqMoSz7+hZvOZSTAepsabiuhiQ==}
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -5366,6 +5372,8 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
     optional: true
+
+  html5-qrcode@2.3.8: {}
 
   ignore@5.3.2: {}
 

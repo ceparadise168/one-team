@@ -541,6 +541,8 @@ export function buildDigitalIdFlexMessage(employeeId: string): LineMessage {
 export function buildServicesMenuFlexMessage(options?: {
   isAdmin?: boolean;
   miniAppBaseUrl?: string;
+  tenantId?: string;
+  accessToken?: string;
 }): LineMessage {
   const miniAppBase = options?.miniAppBaseUrl ?? 'https://miniapp.line.me/';
   const enabledServices = ['volunteer'];
@@ -629,7 +631,9 @@ export function buildServicesMenuFlexMessage(options?: {
               ? {
                   type: 'uri',
                   label: svc.label,
-                  uri: `${miniAppBase}${svc.path}`,
+                  uri: options?.accessToken
+                    ? `${miniAppBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}`
+                    : `${miniAppBase}${svc.path}`,
                 }
               : {
                   type: 'postback',

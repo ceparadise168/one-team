@@ -405,6 +405,7 @@ const webhookEventService = new WebhookEventService(
   employeeAccessGovernanceService,
   tenantRepository,
   selfRegistrationService,
+  authSessionService,
   {
     now: () => new Date(),
     miniAppBaseUrl: process.env.MINI_APP_BASE_URL,

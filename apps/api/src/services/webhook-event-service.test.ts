@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import { WebhookEventService } from './webhook-event-service.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
 import { SelfRegistrationService } from './self-registration-service.js';
+import { AuthSessionService } from './auth-session-service.js';
 import { InMemoryWebhookEventRepository } from '../repositories/webhook-event-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { InMemoryAuditEventRepository } from '../repositories/offboarding-repository.js';
 import { InMemoryTenantRepository } from '../repositories/tenant-repository.js';
+import {
+  InMemoryRefreshSessionRepository,
+  InMemoryRevokedJtiRepository
+} from '../repositories/auth-repository.js';
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
 import { StubLineAuthClient } from '../line/line-auth-client.js';
 import { LineWebhookEvent } from '../domain/webhook.js';
@@ -46,6 +51,12 @@ async function createService() {
     { now: () => new Date('2026-02-28T00:00:00.000Z') }
   );
 
+  const authSessionService = new AuthSessionService(
+    new InMemoryRefreshSessionRepository(),
+    new InMemoryRevokedJtiRepository(),
+    employeeBindingRepo
+  );
+
   const service = new WebhookEventService(
     webhookEventRepo,
     employeeBindingRepo,
@@ -54,6 +65,7 @@ async function createService() {
     accessGovernanceService,
     tenantRepo,
     selfRegistrationService,
+    authSessionService,
     { now: () => new Date('2026-02-28T00:00:00.000Z') }
   );
 

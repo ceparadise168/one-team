@@ -88,7 +88,7 @@ export class PlatformStack extends Stack {
         AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
         VOLUNTEER_TABLE_NAME: `${prefix}-volunteer`,
         DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
-        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174'
+        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174' // overridden below with CloudFront domain
       }
     });
 
@@ -422,6 +422,11 @@ export class PlatformStack extends Stack {
     apiRuntimeHandler.addEnvironment(
       'MINI_APP_BASE_URL',
       `https://${miniAppDistribution.distributionDomainName}`
+    );
+
+    apiRuntimeHandler.addEnvironment(
+      'CORS_ALLOWED_ORIGINS',
+      `http://localhost:5173,http://localhost:5174,https://${miniAppDistribution.distributionDomainName}`
     );
 
     new CfnOutput(this, 'MiniAppDistributionDomain', {

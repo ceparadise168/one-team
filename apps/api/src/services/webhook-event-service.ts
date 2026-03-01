@@ -20,6 +20,7 @@ import { TenantRepository } from '../repositories/tenant-repository.js';
 import { WebhookEventRepository } from '../repositories/webhook-event-repository.js';
 import { EmployeeAccessGovernanceService } from './employee-access-governance-service.js';
 import { SelfRegistrationService } from './self-registration-service.js';
+import { AuthSessionService } from './auth-session-service.js';
 import { ConflictError } from '../errors.js';
 import { randomUUID } from 'node:crypto';
 
@@ -37,6 +38,7 @@ export class WebhookEventService {
     private readonly accessGovernanceService: EmployeeAccessGovernanceService,
     private readonly tenantRepository: TenantRepository,
     private readonly selfRegistrationService: SelfRegistrationService,
+    private readonly authSessionService: AuthSessionService,
     private readonly options: WebhookEventServiceOptions = { now: () => new Date() }
   ) {}
 
@@ -273,7 +275,18 @@ export class WebhookEventService {
     const lineUserId = event.source.userId;
     if (!lineUserId || !event.replyToken) return;
 
+    const binding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
     const isAdmin = await this.checkAdminPermission(tenantId, lineUserId);
+
+    let accessToken: string | undefined;
+    if (binding && binding.accessStatus === 'APPROVED') {
+      const tokens = await this.authSessionService.issueEmployeeSession({
+        tenantId,
+        lineUserId,
+        employeeId: binding.employeeId
+      });
+      accessToken = tokens.accessToken;
+    }
 
     await this.linePlatformClient.replyMessage({
       tenantId,
@@ -282,6 +295,8 @@ export class WebhookEventService {
         buildServicesMenuFlexMessage({
           isAdmin,
           miniAppBaseUrl: this.options.miniAppBaseUrl,
+          tenantId,
+          accessToken,
         }),
       ]
     });

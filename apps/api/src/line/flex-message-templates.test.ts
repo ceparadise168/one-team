@@ -2,30 +2,32 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildWelcomeFlexMessage,
-  buildBindingInstructionFlexMessage,
   buildAccessConfirmationFlexMessage,
   buildOffboardingNotificationFlexMessage,
   buildAdminDashboardFlexMessage,
   buildPendingEmployeesCarouselFlexMessage,
   buildAdminActionResultFlexMessage,
+  buildDigitalIdFlexMessage,
   buildServicesMenuFlexMessage
 } from './flex-message-templates.js';
 
 describe('buildWelcomeFlexMessage', () => {
-  it('returns flex message with tenant name', () => {
+  it('returns flex message with tenant name, no registration button by default', () => {
     const msg = buildWelcomeFlexMessage('Acme Corp');
     assert.equal(msg.type, 'flex');
     assert.ok(msg.altText?.includes('Acme Corp'));
     assert.ok(msg.contents);
+    assert.ok(!JSON.stringify(msg.contents).includes('開始申請'));
   });
-});
 
-describe('buildBindingInstructionFlexMessage', () => {
-  it('returns flex message with binding code', () => {
-    const msg = buildBindingInstructionFlexMessage('12345678');
-    assert.equal(msg.type, 'flex');
-    assert.ok(msg.altText?.includes('綁定'));
-    assert.ok(JSON.stringify(msg.contents).includes('12345678'));
+  it('includes postback registration button when showRegistration is true', () => {
+    const msg = buildWelcomeFlexMessage('Acme Corp', { showRegistration: true });
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('開始申請'));
+    assert.ok(json.includes('action=request_access'));
+    assert.ok(json.includes('postback'));
+    assert.ok(!json.includes('liff.line.me'), 'Should not include LIFF URL');
+    assert.ok(!json.includes('fillInText'), 'Should not pre-fill text');
   });
 });
 
@@ -104,21 +106,46 @@ describe('buildAdminActionResultFlexMessage', () => {
   });
 });
 
+describe('buildDigitalIdFlexMessage', () => {
+  it('returns flex message with QR code and employee ID', () => {
+    const msg = buildDigitalIdFlexMessage('E12345');
+    assert.equal(msg.type, 'flex');
+    assert.ok(msg.altText?.includes('E12345'));
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('數位員工證'));
+    assert.ok(json.includes('E12345'));
+    assert.ok(json.includes('quickchart.io/qr'));
+    assert.ok(json.includes('image'));
+  });
+
+  it('URL-encodes the employee ID in QR code URL', () => {
+    const msg = buildDigitalIdFlexMessage('E 001');
+    const json = JSON.stringify(msg.contents);
+    assert.ok(json.includes('E%20001'), 'Should URL-encode employee ID');
+  });
+});
+
 describe('buildServicesMenuFlexMessage', () => {
-  it('returns 2-bubble carousel for non-admin', () => {
+  it('returns carousel with digital-id + 5 services for non-admin', () => {
     const msg = buildServicesMenuFlexMessage();
     assert.equal(msg.type, 'flex');
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    assert.equal(contents.contents.length, 2);
+    // 1 (員工證) + 5 (services) = 6
+    assert.equal(contents.contents.length, 6);
+    const json = JSON.stringify(contents);
+    assert.ok(json.includes('志工活動'));
+    assert.ok(json.includes('uri'));
   });
 
-  it('returns 3-bubble carousel for admin', () => {
+  it('returns carousel with admin bubble for admin', () => {
     const msg = buildServicesMenuFlexMessage({ isAdmin: true });
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    assert.equal(contents.contents.length, 3);
-    const json = JSON.stringify(contents.contents[2]);
+    // 1 (員工證) + 5 (services) + 1 (管理後台) = 7
+    assert.equal(contents.contents.length, 7);
+    const lastBubble = contents.contents[6];
+    const json = JSON.stringify(lastBubble);
     assert.ok(json.includes('管理後台'));
     assert.ok(json.includes('action=admin_dashboard'));
   });

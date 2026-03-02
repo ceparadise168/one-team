@@ -5,6 +5,7 @@
 /.gemini/
 /.kilocode/
 /.opencode/
+/.worktrees/
 node_modules/
 dist/
 cdk.out/

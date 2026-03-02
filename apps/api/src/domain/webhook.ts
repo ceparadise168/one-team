@@ -36,7 +36,8 @@ export type PostbackAction =
   | 'admin_dashboard'
   | 'admin_list'
   | 'admin_approve'
-  | 'admin_reject';
+  | 'admin_reject'
+  | 'coming_soon';
 
 const KNOWN_POSTBACK_ACTIONS = new Set<string>([
   'request_access',
@@ -48,7 +49,8 @@ const KNOWN_POSTBACK_ACTIONS = new Set<string>([
   'admin_dashboard',
   'admin_list',
   'admin_approve',
-  'admin_reject'
+  'admin_reject',
+  'coming_soon'
 ]);
 
 export function parsePostbackData(data: string): {

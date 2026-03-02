@@ -57,12 +57,12 @@ export class DigitalIdService {
   }
 
   async verifyDynamicPayload(token: string): Promise<DigitalIdVerificationResult> {
-    const parsed = this.parseAndVerifyToken(token);
+    const { payload: parsed, error: parseError } = this.parseAndVerifyToken(token);
 
     if (!parsed) {
       return {
         valid: false,
-        reasonCode: 'SIGNATURE_INVALID'
+        reasonCode: parseError === 'BAD_FORMAT' ? 'MALFORMED' : 'SIGNATURE_INVALID'
       };
     }
 
@@ -132,17 +132,19 @@ export class DigitalIdService {
     return `${payloadSegment}.${signature}`;
   }
 
-  private parseAndVerifyToken(token: string): DigitalIdPayload | null {
+  private parseAndVerifyToken(
+    token: string
+  ): { payload: DigitalIdPayload; error?: undefined } | { payload: null; error: 'BAD_FORMAT' | 'BAD_SIGNATURE' } {
     const parts = token.split('.');
 
     if (parts.length !== 2) {
-      return null;
+      return { payload: null, error: 'BAD_FORMAT' };
     }
 
     const [payloadSegment, signatureSegment] = parts;
 
     if (!payloadSegment || !signatureSegment) {
-      return null;
+      return { payload: null, error: 'BAD_FORMAT' };
     }
 
     const expectedSignature = createHmac('sha256', this.options.signingSecret)
@@ -153,11 +155,11 @@ export class DigitalIdService {
     const providedBuffer = Buffer.from(signatureSegment, 'utf8');
 
     if (expectedBuffer.length !== providedBuffer.length) {
-      return null;
+      return { payload: null, error: 'BAD_SIGNATURE' };
     }
 
     if (!timingSafeEqual(expectedBuffer, providedBuffer)) {
-      return null;
+      return { payload: null, error: 'BAD_SIGNATURE' };
     }
 
     try {
@@ -171,12 +173,12 @@ export class DigitalIdService {
         typeof parsed.windowStart !== 'number' ||
         typeof parsed.exp !== 'number'
       ) {
-        return null;
+        return { payload: null, error: 'BAD_FORMAT' };
       }
 
-      return parsed;
+      return { payload: parsed };
     } catch {
-      return null;
+      return { payload: null, error: 'BAD_FORMAT' };
     }
   }
 }

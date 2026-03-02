@@ -2,7 +2,7 @@ import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from '../lambda.js';
 
 export async function invokeLambda(input: {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE';
   path: string;
   body?: unknown;
   headers?: Record<string, string>;
@@ -31,6 +31,14 @@ export async function invokeLambda(input: {
 
   return {
     statusCode: response.statusCode,
-    body: response.body ? JSON.parse(response.body) : null
+    body: response.body
+      ? (() => {
+          try {
+            return JSON.parse(response.body!);
+          } catch {
+            return response.body;
+          }
+        })()
+      : null
   };
 }

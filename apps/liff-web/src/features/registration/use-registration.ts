@@ -50,7 +50,6 @@ export function useRegistration({
           body: JSON.stringify({
             tenantId,
             employeeId: data.employeeId,
-            nickname: data.nickname,
             lineIdToken
           })
         });

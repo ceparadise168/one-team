@@ -52,17 +52,19 @@ export class NoOpRateLimiter implements RateLimiter {
   }
 }
 
-export type RouteCategory = 'admin' | 'public' | 'webhook';
+export type RouteCategory = 'admin' | 'public' | 'liff' | 'webhook';
 
 export const RATE_LIMITS: Record<RouteCategory, { limit: number; windowSeconds: number }> = {
   admin: { limit: 100, windowSeconds: 60 },
   public: { limit: 30, windowSeconds: 60 },
+  liff: { limit: 100, windowSeconds: 60 },
   webhook: { limit: 1000, windowSeconds: 60 }
 };
 
 export function classifyRoute(path: string): RouteCategory {
   if (path.startsWith('/v1/admin/')) return 'admin';
   if (path.startsWith('/v1/line/webhook/')) return 'webhook';
+  if (path.startsWith('/v1/liff/') || path.startsWith('/v1/volunteer/')) return 'liff';
   return 'public';
 }
 

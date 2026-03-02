@@ -65,8 +65,11 @@ import { EmployeeAccessGovernanceService } from './services/employee-access-gove
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 import { AdminAuthService } from './services/admin-auth-service.js';
 import { SelfRegistrationService } from './services/self-registration-service.js';
+import { VolunteerService } from './services/volunteer-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
+import { InMemoryVolunteerRepository } from './repositories/volunteer-repository.js';
+import { DynamoDbVolunteerRepository } from './repositories/dynamodb-volunteer-repository.js';
 import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
 import { InMemoryAsyncJobDispatcher, SqsAsyncJobDispatcher, AsyncJobDispatcher } from './workers/async-job-dispatcher.js';
 import { createRequestLogger } from './logging/request-context.js';
@@ -152,8 +155,7 @@ const retryOffboardingJobSchema = z.object({
 const selfRegisterSchema = z.object({
   tenantId: z.string().min(1),
   lineIdToken: z.string().min(1),
-  employeeId: z.string().min(1).max(50),
-  nickname: z.string().min(1).max(50)
+  employeeId: z.string().min(1).max(50)
 });
 
 const adminLoginSchema = z.object({
@@ -316,6 +318,7 @@ const onboardingService = new TenantOnboardingService(
   }
 );
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const invitationBindingService = new InvitationBindingService(
   tenantRepository,
   invitationRepository,
@@ -386,16 +389,6 @@ const adminAuthService = new AdminAuthService(adminAccountRepository, {
   now: () => new Date()
 });
 
-const webhookEventService = new WebhookEventService(
-  webhookEventRepository,
-  employeeBindingRepository,
-  auditEventRepository,
-  linePlatformClient,
-  employeeAccessGovernanceService,
-  tenantRepository,
-  { now: () => new Date() }
-);
-
 const selfRegistrationService = new SelfRegistrationService(
   lineAuthClient,
   employeeBindingRepository,
@@ -403,6 +396,31 @@ const selfRegistrationService = new SelfRegistrationService(
   linePlatformClient,
   { now: () => new Date() }
 );
+
+const webhookEventService = new WebhookEventService(
+  webhookEventRepository,
+  employeeBindingRepository,
+  auditEventRepository,
+  linePlatformClient,
+  employeeAccessGovernanceService,
+  tenantRepository,
+  selfRegistrationService,
+  authSessionService,
+  {
+    now: () => new Date(),
+    liffWebBaseUrl: process.env.LIFF_WEB_BASE_URL,
+  }
+);
+
+const volunteerRepository =
+  process.env.USE_DYNAMODB_REPOSITORIES === 'true'
+    ? new DynamoDbVolunteerRepository(dynamoDbClient!, process.env.VOLUNTEER_TABLE_NAME!)
+    : new InMemoryVolunteerRepository();
+const volunteerService = new VolunteerService(volunteerRepository, employeeBindingRepository, {
+  tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
+  signingSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-signing-secret',
+  now: () => new Date(),
+});
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const startTime = Date.now();
@@ -508,9 +526,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 200) : 50;
 
       const bindings = await employeeBindingRepository.listByTenant(tenantId);
+      const activeBindings = bindings.filter(b => b.employmentStatus === 'ACTIVE');
       const filtered = statusFilter
-        ? bindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
-        : bindings;
+        ? activeBindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
+        : activeBindings;
 
       const employees = filtered.slice(0, limit).map(b => ({
         employeeId: b.employeeId,
@@ -681,6 +700,170 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const payload = scannerVerifySchema.parse(parseBody(event));
       const result = await digitalIdService.verifyDynamicPayload(payload.payload);
       return jsonResponse(200, result, responseOptions);
+    }
+
+    // Volunteer: list activities / create activity
+    const volunteerActivitiesMatch = path.match(/^\/v1\/volunteer\/activities$/);
+    if (volunteerActivitiesMatch) {
+      if (method === 'GET') {
+        const status = event.queryStringParameters?.status ?? 'OPEN';
+        const fromDate = event.queryStringParameters?.from;
+        const activities = await volunteerService.listActivities({ status, fromDate });
+        return jsonResponse(200, { activities }, responseOptions);
+      }
+      if (method === 'POST') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await volunteerService.createActivity({
+          title: body.title as string,
+          description: body.description as string,
+          location: body.location as string,
+          city: (body.city as string) ?? null,
+          activityDate: body.activityDate as string,
+          startTime: body.startTime as string,
+          endTime: body.endTime as string,
+          capacity: body.capacity as number | null,
+          checkInMode: body.checkInMode as 'organizer-scan' | 'self-scan',
+          createdBy: principal.employeeId,
+        });
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    // Volunteer: my activities
+    if (path === '/v1/volunteer/my-activities' && method === 'GET') {
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const registrations = await volunteerService.myActivities(principal.employeeId);
+      return jsonResponse(200, { registrations }, responseOptions);
+    }
+
+    // Volunteer: single activity
+    const volunteerActivityMatch = path.match(/^\/v1\/volunteer\/activities\/([^/]+)$/);
+    if (volunteerActivityMatch) {
+      const activityId = volunteerActivityMatch[1];
+      if (method === 'GET') {
+        let employeeId: string | undefined;
+        try {
+          const principal = await requireEmployeePrincipal({ event, authSessionService });
+          employeeId = principal.employeeId;
+        } catch {
+          // Unauthenticated access is fine — just won't include myRegistration
+        }
+        const detail = await volunteerService.getActivityDetail(activityId, employeeId);
+        if (!detail) return jsonResponse(404, { error: 'Activity not found' }, responseOptions);
+        return jsonResponse(200, detail, responseOptions);
+      }
+      if (method === 'DELETE') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        await volunteerService.cancelActivity(activityId, principal.employeeId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // Volunteer: register / cancel registration
+    const volunteerRegisterMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/register$/
+    );
+    if (volunteerRegisterMatch) {
+      const activityId = volunteerRegisterMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      if (method === 'POST') {
+        await volunteerService.register(activityId, principal.employeeId);
+        return jsonResponse(201, { ok: true }, responseOptions);
+      }
+      if (method === 'DELETE') {
+        await volunteerService.cancelRegistration(activityId, principal.employeeId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // Volunteer: self-scan check-in
+    const volunteerCheckInMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/check-in$/
+    );
+    if (volunteerCheckInMatch && method === 'POST') {
+      const activityId = volunteerCheckInMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await volunteerService.selfScanCheckIn(
+        activityId,
+        body.activityQrPayload as string,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Volunteer: organizer scan check-in
+    const volunteerScanCheckInMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/scan-check-in$/
+    );
+    if (volunteerScanCheckInMatch && method === 'POST') {
+      const activityId = volunteerScanCheckInMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await volunteerService.organizerScanCheckIn(
+        activityId,
+        body.employeeId as string,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Volunteer: organizer scan check-in via digital ID QR payload
+    const volunteerScanCheckInQrMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/scan-check-in-qr$/
+    );
+    if (volunteerScanCheckInQrMatch && method === 'POST') {
+      const activityId = volunteerScanCheckInQrMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      const digitalIdPayload = body.digitalIdPayload as string;
+      if (!digitalIdPayload) {
+        return jsonResponse(400, { error: 'digitalIdPayload is required' }, responseOptions);
+      }
+      const verification = await digitalIdService.verifyDynamicPayload(digitalIdPayload);
+      if (!verification.valid || !verification.employeeId) {
+        return jsonResponse(
+          400,
+          { error: `Digital ID verification failed: ${verification.reasonCode}` },
+          responseOptions
+        );
+      }
+      await volunteerService.organizerScanCheckIn(
+        activityId,
+        verification.employeeId,
+        principal.employeeId
+      );
+      return jsonResponse(200, { ok: true, employeeId: verification.employeeId }, responseOptions);
+    }
+
+    // Volunteer: report
+    const volunteerReportMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/report$/
+    );
+    if (volunteerReportMatch && method === 'GET') {
+      const activityId = volunteerReportMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const report = await volunteerService.getReport(activityId);
+      return jsonResponse(200, report, responseOptions);
+    }
+
+    // Volunteer: export CSV
+    const volunteerExportMatch = path.match(
+      /^\/v1\/volunteer\/activities\/([^/]+)\/report\/export$/
+    );
+    if (volunteerExportMatch && method === 'GET') {
+      const activityId = volunteerExportMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const csv = await volunteerService.exportCsv(activityId);
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': `attachment; filename="volunteer-${activityId}.csv"`,
+        },
+        body: csv,
+      };
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);

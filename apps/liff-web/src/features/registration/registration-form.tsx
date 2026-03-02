@@ -15,11 +15,10 @@ export function RegistrationForm({ apiBaseUrl, liffId, tenantId }: RegistrationF
   });
 
   const [employeeId, setEmployeeId] = useState('');
-  const [nickname, setNickname] = useState('');
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    await submit({ employeeId, nickname });
+    await submit({ employeeId });
   }
 
   if (isSuccess) {
@@ -47,19 +46,6 @@ export function RegistrationForm({ apiBaseUrl, liffId, tenantId }: RegistrationF
               required
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
-              disabled={!isLiffReady || isSubmitting}
-              style={{ width: '100%' }}
-            />
-          </label>
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label>
-            暱稱
-            <br />
-            <input
-              required
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
               disabled={!isLiffReady || isSubmitting}
               style={{ width: '100%' }}
             />

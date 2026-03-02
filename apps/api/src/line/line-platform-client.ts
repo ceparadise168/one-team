@@ -533,6 +533,7 @@ function createRichMenuSvgPng(input: {
   return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function createSolidColorPng(input: {
   width: number;
   height: number;

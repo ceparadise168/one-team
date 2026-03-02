@@ -15,7 +15,10 @@ import {
   aws_logs as logs,
   aws_ses as ses,
   aws_secretsmanager as secretsmanager,
+  aws_s3 as s3,
   aws_sqs as sqs,
+  aws_cloudfront as cloudfront,
+  aws_cloudfront_origins as origins,
   aws_wafv2 as wafv2
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -82,7 +85,10 @@ export class PlatformStack extends Stack {
         EMPLOYEES_TABLE_NAME: `${prefix}-employees`,
         SESSIONS_TABLE_NAME: `${prefix}-sessions`,
         TOKEN_REVOCATIONS_TABLE_NAME: `${prefix}-token-revocations`,
-        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`
+        AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
+        VOLUNTEER_TABLE_NAME: `${prefix}-volunteer`,
+        DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
+        CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174' // overridden below to include CloudFront domain
       }
     });
 
@@ -203,12 +209,32 @@ export class PlatformStack extends Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
+    const volunteerTable = new dynamodb.Table(this, 'VolunteerTable', {
+      ...tableProps,
+      tableName: `${prefix}-volunteer`
+    });
+
+    volunteerTable.addGlobalSecondaryIndex({
+      indexName: 'gsi-status-date',
+      partitionKey: { name: 'gsi_status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'activity_date', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
+    volunteerTable.addGlobalSecondaryIndex({
+      indexName: 'gsi-employee',
+      partitionKey: { name: 'employee_id', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'registered_at', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
     tenantsTable.grantReadWriteData(apiRuntimeHandler);
     invitationsTable.grantReadWriteData(apiRuntimeHandler);
     employeesTable.grantReadWriteData(apiRuntimeHandler);
     sessionsTable.grantReadWriteData(apiRuntimeHandler);
     tokenRevocationsTable.grantReadWriteData(apiRuntimeHandler);
     auditEventsTable.grantReadWriteData(apiRuntimeHandler);
+    volunteerTable.grantReadWriteData(apiRuntimeHandler);
 
     invitationsQueue.grantSendMessages(apiRuntimeHandler);
     offboardingQueue.grantSendMessages(apiRuntimeHandler);
@@ -223,7 +249,6 @@ export class PlatformStack extends Stack {
       handler: 'handler',
       timeout: Duration.seconds(30),
       memorySize: 256,
-      reservedConcurrentExecutions: 10,
       tracing: lambda.Tracing.ACTIVE,
       environment: {
         USE_DYNAMODB_REPOSITORIES: 'true',
@@ -365,6 +390,53 @@ export class PlatformStack extends Stack {
       }),
       threshold: 3,
       evaluationPeriods: 1
+    });
+
+    // LIFF web app hosting (S3 + CloudFront)
+    const liffWebBucket = new s3.Bucket(this, 'LiffWebBucket', {
+      bucketName: `${prefix}-liff-web`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
+    });
+
+    const liffWebDistribution = new cloudfront.Distribution(this, 'LiffWebDistribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(liffWebBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html'
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html'
+        }
+      ]
+    });
+
+    const liffWebBaseUrl = `https://${liffWebDistribution.distributionDomainName}`;
+
+    apiRuntimeHandler.addEnvironment('LIFF_WEB_BASE_URL', liffWebBaseUrl);
+
+    apiRuntimeHandler.addEnvironment(
+      'CORS_ALLOWED_ORIGINS',
+      `http://localhost:5173,http://localhost:5174,${liffWebBaseUrl}`
+    );
+
+    new CfnOutput(this, 'LiffWebDistributionDomain', {
+      value: liffWebDistribution.distributionDomainName,
+      description: 'LIFF web app CloudFront domain'
+    });
+
+    new CfnOutput(this, 'LiffWebBucketName', {
+      value: liffWebBucket.bucketName,
+      description: 'LIFF web app S3 bucket for deployment'
     });
 
     new CfnOutput(this, 'ApiUrl', {

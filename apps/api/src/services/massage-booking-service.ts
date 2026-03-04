@@ -8,6 +8,10 @@ import { ForbiddenError, NotFoundError, ValidationError, ConflictError } from '.
 interface MassageBookingServiceOptions {
   tenantId: string;
   now: () => Date;
+  // Future: add schedulerClient for automatic EventBridge-triggered draws
+  // schedulerClient?: SchedulerClient;
+  // drawLambdaArn?: string;
+  // schedulerRoleArn?: string;
 }
 
 interface CreateSessionInput {

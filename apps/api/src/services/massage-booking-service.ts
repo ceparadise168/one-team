@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { MassageSessionRecord, MassageSessionMode, MassageBookingRecord } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from '../repositories/massage-booking-repository.js';
 import type { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
+import type { LinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, NotFoundError, ValidationError, ConflictError } from '../errors.js';
 
 interface MassageBookingServiceOptions {
@@ -25,6 +26,7 @@ export class MassageBookingService {
   constructor(
     private readonly massageRepo: MassageBookingRepository,
     private readonly employeeRepo: EmployeeBindingRepository,
+    private readonly lineClient: LinePlatformClient,
     private readonly options: MassageBookingServiceOptions
   ) {}
 
@@ -108,7 +110,7 @@ export class MassageBookingService {
     const bookingId = randomUUID().slice(0, 8);
     const status = session.mode === 'FIRST_COME' ? 'CONFIRMED' : 'REGISTERED';
 
-    await this.massageRepo.createBooking({
+    const booking: MassageBookingRecord = {
       tenantId: this.options.tenantId,
       bookingId,
       sessionId,
@@ -119,7 +121,14 @@ export class MassageBookingService {
       cancelledByEmployeeId: null,
       cancellationReason: null,
       createdAt: now.toISOString(),
-    });
+    };
+    await this.massageRepo.createBooking(booking);
+
+    if (status === 'CONFIRMED') {
+      await this.notify(lineUserId, this.formatConfirmedMessage(session));
+    } else {
+      await this.notify(lineUserId, this.formatRegisteredMessage(session));
+    }
 
     return { bookingId };
   }
@@ -152,6 +161,13 @@ export class MassageBookingService {
 
     session.drawnAt = this.options.now().toISOString();
     await this.massageRepo.updateSession(session);
+
+    for (const booking of [...winners, ...losers]) {
+      const msg = booking.status === 'CONFIRMED'
+        ? `🎉 恭喜！你已中籤 ${session.date} 的按摩（${session.location}）`
+        : `😢 很遺憾，${session.date} 的按摩未中籤`;
+      await this.notify(booking.lineUserId, msg);
+    }
   }
 
   async cancelBooking(bookingId: string, employeeId: string, reason?: string): Promise<void> {
@@ -170,6 +186,8 @@ export class MassageBookingService {
     booking.cancelledByEmployeeId = employeeId;
     booking.cancellationReason = reason ?? null;
     await this.massageRepo.updateBooking(booking);
+
+    await this.notify(booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已取消`);
   }
 
   async adminCancelBooking(bookingId: string, adminEmployeeId: string, reason?: string): Promise<void> {
@@ -183,6 +201,9 @@ export class MassageBookingService {
     booking.cancelledByEmployeeId = adminEmployeeId;
     booking.cancellationReason = reason ?? null;
     await this.massageRepo.updateBooking(booking);
+
+    const session = await this.getSession(booking.sessionId);
+    await this.notify(booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已被管理員取消`);
   }
 
   async listMyBookings(employeeId: string): Promise<MassageBookingRecord[]> {
@@ -192,6 +213,27 @@ export class MassageBookingService {
   async listSessionBookings(sessionId: string, requestedBy: string): Promise<MassageBookingRecord[]> {
     await this.requireManageBookingPermission(requestedBy);
     return this.massageRepo.listBookingsBySession(this.options.tenantId, sessionId);
+  }
+
+  private formatConfirmedMessage(session: MassageSessionRecord): string {
+    const timeStr = new Date(session.startAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    return `✅ 你已成功預約 ${session.date} ${timeStr} 的按摩（${session.location}）`;
+  }
+
+  private formatRegisteredMessage(session: MassageSessionRecord): string {
+    return `📝 已登記 ${session.date} 的按摩抽籤，結果將於抽籤後通知`;
+  }
+
+  private async notify(lineUserId: string, text: string): Promise<void> {
+    try {
+      await this.lineClient.pushMessage({
+        tenantId: this.options.tenantId,
+        lineUserId,
+        messages: [{ type: 'text', text }],
+      });
+    } catch {
+      // Notification failure should not break the booking flow
+    }
   }
 
   private async requireManageBookingPermission(employeeId: string): Promise<void> {

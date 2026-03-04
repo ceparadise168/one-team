@@ -439,6 +439,7 @@ const massageBookingRepository = process.env.USE_DYNAMODB_REPOSITORIES === 'true
 const massageBookingService = new MassageBookingService(
   massageBookingRepository,
   employeeBindingRepository,
+  linePlatformClient,
   {
     tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
     now: () => new Date(),

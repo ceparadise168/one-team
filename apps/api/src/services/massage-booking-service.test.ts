@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import { MassageBookingService } from './massage-booking-service.js';
 import { InMemoryMassageBookingRepository } from '../repositories/massage-booking-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
+import { StubLinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, ValidationError, ConflictError } from '../errors.js';
 
 function createContext(nowStr = '2026-04-01T09:00:00.000Z') {
   const massageRepo = new InMemoryMassageBookingRepository();
   const employeeRepo = new InMemoryEmployeeBindingRepository();
-  const service = new MassageBookingService(massageRepo, employeeRepo, {
+  const lineClient = new StubLinePlatformClient();
+  const service = new MassageBookingService(massageRepo, employeeRepo, lineClient, {
     tenantId: 'test-tenant',
     now: () => new Date(nowStr),
   });
-  return { service, massageRepo, employeeRepo };
+  return { service, massageRepo, employeeRepo, lineClient };
 }
 
 async function seedAdmin(employeeRepo: InMemoryEmployeeBindingRepository) {
@@ -450,6 +452,85 @@ describe('MassageBookingService — Cancellation', () => {
 
     const booking = await massageRepo.findBookingById('test-tenant', bookingId);
     assert.equal(booking!.status, 'CANCELLED');
+  });
+});
+
+describe('MassageBookingService — LINE Notifications', () => {
+  it('sends confirmation notification for Mode A booking', async () => {
+    const { service, employeeRepo, lineClient } = createContext('2026-04-14T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    const { sessionId } = await service.createSession({
+      date: '2026-04-15',
+      startAt: '2026-04-15T10:00:00.000Z',
+      endAt: '2026-04-15T10:30:00.000Z',
+      location: '3F',
+      quota: 2,
+      mode: 'FIRST_COME',
+      openAt: '2026-04-14T00:00:00.000Z',
+      drawAt: null,
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    assert.equal(lineClient.pushedMessages.length, 1);
+    assert.equal(lineClient.pushedMessages[0].lineUserId, 'line-emp-01');
+    assert.ok(lineClient.pushedMessages[0].messages[0].text!.includes('成功預約'));
+  });
+
+  it('sends draw result notifications', async () => {
+    const { service, employeeRepo, lineClient } = createContext('2026-04-10T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+
+    const { sessionId } = await service.createSession({
+      date: '2026-04-15',
+      startAt: '2026-04-15T10:00:00.000Z',
+      endAt: '2026-04-15T10:30:00.000Z',
+      location: '3F',
+      quota: 1,
+      mode: 'LOTTERY',
+      openAt: '2026-04-10T00:00:00.000Z',
+      drawAt: '2026-04-14T12:00:00.000Z',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(sessionId, 'EMP02', 'line-emp-02');
+    lineClient.pushedMessages.length = 0; // clear registration notifications
+
+    await service.executeDraw(sessionId);
+    assert.equal(lineClient.pushedMessages.length, 2);
+    const texts = lineClient.pushedMessages.map(m => m.messages[0].text!);
+    assert.ok(texts.some(t => t.includes('恭喜')));
+    assert.ok(texts.some(t => t.includes('遺憾')));
+  });
+
+  it('sends cancellation notification', async () => {
+    const { service, employeeRepo, lineClient } = createContext('2026-04-15T07:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    const { sessionId } = await service.createSession({
+      date: '2026-04-15',
+      startAt: '2026-04-15T10:00:00.000Z',
+      endAt: '2026-04-15T10:30:00.000Z',
+      location: '3F',
+      quota: 2,
+      mode: 'FIRST_COME',
+      openAt: '2026-04-14T00:00:00.000Z',
+      drawAt: null,
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    const { bookingId } = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    lineClient.pushedMessages.length = 0;
+
+    await service.cancelBooking(bookingId, 'EMP01');
+    assert.equal(lineClient.pushedMessages.length, 1);
+    assert.ok(lineClient.pushedMessages[0].messages[0].text!.includes('已取消'));
   });
 });
 

@@ -968,7 +968,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const massageSessionsMatch = path.match(/^\/v1\/massage\/sessions$/);
     if (massageSessionsMatch) {
       if (method === 'GET') {
-        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        await requireEmployeePrincipal({ event, authSessionService });
         const fromDate = event.queryStringParameters?.fromDate;
         const sessions = await massageBookingService.listSessions({ fromDate });
         return jsonResponse(200, { sessions }, responseOptions);
@@ -1062,7 +1062,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const massageDrawMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/draw$/);
     if (massageDrawMatch && method === 'POST') {
       const sessionId = massageDrawMatch[1];
-      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      await requireEmployeePrincipal({ event, authSessionService });
       await massageBookingService.executeDraw(sessionId);
       return jsonResponse(200, { ok: true }, responseOptions);
     }

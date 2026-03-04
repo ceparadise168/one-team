@@ -289,7 +289,7 @@ describe('MassageBookingService — Mode B Lottery', () => {
       createdByEmployeeId: 'ADMIN01',
     });
 
-    const result = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
     const booking = await massageRepo.findBooking('test-tenant', sessionId, 'EMP01');
     assert.equal(booking!.status, 'REGISTERED');
   });

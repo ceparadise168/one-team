@@ -68,6 +68,7 @@ import { AdminAuthService } from './services/admin-auth-service.js';
 import { SelfRegistrationService } from './services/self-registration-service.js';
 import { MassageBookingService } from './services/massage-booking-service.js';
 import { InMemoryMassageBookingRepository } from './repositories/massage-booking-repository.js';
+import { DynamoDbMassageBookingRepository } from './repositories/dynamodb-massage-booking-repository.js';
 import { VolunteerService } from './services/volunteer-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
@@ -432,7 +433,9 @@ const volunteerService = new VolunteerService(volunteerRepository, employeeBindi
   now: () => new Date(),
 });
 
-const massageBookingRepository = new InMemoryMassageBookingRepository();
+const massageBookingRepository = process.env.USE_DYNAMODB_REPOSITORIES === 'true'
+  ? new DynamoDbMassageBookingRepository(dynamoDbClient!, process.env.MASSAGE_TABLE_NAME!)
+  : new InMemoryMassageBookingRepository();
 const massageBookingService = new MassageBookingService(
   massageBookingRepository,
   employeeBindingRepository,

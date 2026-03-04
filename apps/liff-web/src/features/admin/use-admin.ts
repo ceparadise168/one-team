@@ -16,17 +16,20 @@ export function useEmployees(
   apiBaseUrl: string,
   accessToken: string,
   tenantId: string,
-  status?: string
+  status?: string,
+  search?: string
 ) {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
-    const url = status
-      ? `${apiBaseUrl}/v1/liff/tenants/${tenantId}/employees?status=${status}`
-      : `${apiBaseUrl}/v1/liff/tenants/${tenantId}/employees`;
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (search) params.set('search', search);
+    const url = `${apiBaseUrl}/v1/liff/tenants/${tenantId}/employees?${params.toString()}`;
     fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
@@ -36,17 +39,18 @@ export function useEmployees(
       })
       .then((data) => {
         setEmployees(data.employees);
+        setTotal(data.total ?? data.employees.length);
         setError(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [apiBaseUrl, accessToken, tenantId, status]);
+  }, [apiBaseUrl, accessToken, tenantId, status, search]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { employees, loading, error, refresh };
+  return { employees, total, loading, error, refresh };
 }
 
 export async function decideEmployeeAccess(

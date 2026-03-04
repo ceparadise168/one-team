@@ -660,3 +660,66 @@ test('integration: LIFF admin — list employees, decide access, update permissi
   });
   assert.equal(selfRes.statusCode, 400);
 });
+
+test('integration: LIFF admin — search employees by ID prefix', async () => {
+  const suffix = `${Date.now()}-search`;
+
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`,
+    },
+  });
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  // Create admin with canInvite
+  const adminEmp = await selfRegisterApproveAndLogin({
+    tenantId,
+    employeeId: `E-ADM-${suffix}`,
+    lineIdToken: `line-id:U-ADM-${suffix}`,
+  });
+  await invokeLambda({
+    method: 'PUT',
+    path: `/v1/admin/tenants/${tenantId}/employees/${adminEmp.employeeId}/permissions`,
+    headers: adminHeaders,
+    body: { canInvite: true },
+  });
+
+  // Create employees with different prefixes
+  for (const id of [`AAA-${suffix}`, `AAB-${suffix}`, `BBB-${suffix}`]) {
+    await invokeLambda({
+      method: 'POST',
+      path: '/v1/public/self-register',
+      body: { tenantId, lineIdToken: `line-id:${id}`, employeeId: id },
+    });
+  }
+
+  const empAdminHeaders = { authorization: `Bearer ${adminEmp.accessToken}` };
+
+  // Search with prefix "AA" — should match AAA and AAB
+  const searchRes = await invokeLambda({
+    method: 'GET',
+    path: `/v1/liff/tenants/${tenantId}/employees?status=PENDING&search=AA`,
+    headers: empAdminHeaders,
+  });
+  assert.equal(searchRes.statusCode, 200);
+  const body = searchRes.body as { employees: Array<{ employeeId: string }>; total: number };
+  assert.equal(body.total, 2);
+  assert.equal(body.employees.length, 2);
+  assert.ok(body.employees.every((e) => e.employeeId.startsWith('AA')));
+
+  // Default (no search) — should return with total and limited results
+  const defaultRes = await invokeLambda({
+    method: 'GET',
+    path: `/v1/liff/tenants/${tenantId}/employees?status=PENDING`,
+    headers: empAdminHeaders,
+  });
+  assert.equal(defaultRes.statusCode, 200);
+  const defaultBody = defaultRes.body as { employees: Array<{ employeeId: string }>; total: number };
+  assert.ok(defaultBody.total >= 3);
+  assert.ok(defaultBody.employees.length <= 10);
+});

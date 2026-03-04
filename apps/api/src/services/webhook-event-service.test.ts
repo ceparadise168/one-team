@@ -175,7 +175,7 @@ describe('WebhookEventService — admin features', () => {
       boundAt: '2026-02-01T00:00:00.000Z',
       employmentStatus: 'ACTIVE',
       accessStatus: 'APPROVED',
-      permissions: { canInvite: true, canRemove: false }
+      permissions: { canInvite: true, canRemove: false, canManageBooking: false }
     });
 
     // Create some pending employees
@@ -205,7 +205,7 @@ describe('WebhookEventService — admin features', () => {
       boundAt: '2026-02-20T00:00:00.000Z',
       employmentStatus: 'ACTIVE',
       accessStatus: 'APPROVED',
-      permissions: { canInvite: false, canRemove: false }
+      permissions: { canInvite: false, canRemove: false, canManageBooking: false }
     });
 
     return ctx;
@@ -627,7 +627,7 @@ describe('WebhookEventService — follow + request_access', () => {
       boundAt: '2026-02-01T00:00:00.000Z',
       employmentStatus: 'ACTIVE',
       accessStatus: 'APPROVED',
-      permissions: { canInvite: false, canRemove: false }
+      permissions: { canInvite: false, canRemove: false, canManageBooking: false }
     });
 
     await service.processEvents('tenant-1', [{

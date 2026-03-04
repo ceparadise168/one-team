@@ -7,7 +7,7 @@ interface Employee {
   boundAt: string;
   accessRequestedAt?: string;
   accessReviewedAt?: string;
-  permissions: { canInvite: boolean; canRemove: boolean };
+  permissions: { canInvite: boolean; canRemove: boolean; canManageBooking: boolean };
 }
 
 export type { Employee };
@@ -84,7 +84,7 @@ export async function updateEmployeePermissions(
   accessToken: string,
   tenantId: string,
   employeeId: string,
-  permissions: { canInvite?: boolean; canRemove?: boolean }
+  permissions: { canInvite?: boolean; canRemove?: boolean; canManageBooking?: boolean }
 ): Promise<void> {
   const res = await fetch(
     `${apiBaseUrl}/v1/liff/tenants/${tenantId}/employees/${employeeId}/permissions`,

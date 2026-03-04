@@ -58,7 +58,7 @@ export function AdminPage() {
 
   async function handleTogglePermission(
     empId: string,
-    permission: 'canInvite' | 'canRemove',
+    permission: 'canInvite' | 'canRemove' | 'canManageBooking',
     value: boolean
   ) {
     try {
@@ -181,6 +181,17 @@ export function AdminPage() {
                       }
                     />
                     <span>可移除員工</span>
+                  </label>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={emp.permissions.canManageBooking}
+                      disabled={isSelf}
+                      onChange={(e) =>
+                        handleTogglePermission(emp.employeeId, 'canManageBooking', e.target.checked)
+                      }
+                    />
+                    <span>可管理預約</span>
                   </label>
                 </div>
                 {isSelf && <p style={styles.selfNote}>無法修改自己的權限</p>}

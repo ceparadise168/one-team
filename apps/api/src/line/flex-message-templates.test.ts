@@ -131,8 +131,8 @@ describe('buildServicesMenuFlexMessage', () => {
     assert.equal(msg.type, 'flex');
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    // 1 (員工證) + 5 (services) = 6
-    assert.equal(contents.contents.length, 6);
+    // 1 (員工證) + 6 (services) = 7
+    assert.equal(contents.contents.length, 7);
     const json = JSON.stringify(contents);
     assert.ok(json.includes('志工活動'));
     assert.ok(json.includes('uri'));
@@ -142,9 +142,9 @@ describe('buildServicesMenuFlexMessage', () => {
     const msg = buildServicesMenuFlexMessage({ isAdmin: true });
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    // 1 (員工證) + 5 (services) + 1 (管理後台) = 7
-    assert.equal(contents.contents.length, 7);
-    const lastBubble = contents.contents[6];
+    // 1 (員工證) + 6 (services) + 1 (管理後台) = 8
+    assert.equal(contents.contents.length, 8);
+    const lastBubble = contents.contents[7];
     const json = JSON.stringify(lastBubble);
     assert.ok(json.includes('管理後台'));
     assert.ok(json.includes('"type":"uri"'));

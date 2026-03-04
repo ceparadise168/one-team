@@ -83,7 +83,7 @@ describe('SelfRegistrationService', () => {
       boundAt: '2026-02-01T00:00:00.000Z',
       employmentStatus: 'ACTIVE',
       accessStatus: 'APPROVED',
-      permissions: { canInvite: true, canRemove: false }
+      permissions: { canInvite: true, canRemove: false, canManageBooking: false }
     });
 
     await service.register({

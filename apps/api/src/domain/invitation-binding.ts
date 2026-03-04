@@ -71,6 +71,7 @@ export type EmployeeAccessStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export interface EmployeePermissions {
   canInvite: boolean;
   canRemove: boolean;
+  canManageBooking: boolean;
 }
 
 export interface EmployeeBindingAccessProfile extends Omit<EmployeeBindingRecord, 'permissions' | 'accessStatus'> {
@@ -82,7 +83,8 @@ export const DEFAULT_EMPLOYEE_ACCESS_STATUS: EmployeeAccessStatus = 'PENDING';
 
 export const DEFAULT_EMPLOYEE_PERMISSIONS: EmployeePermissions = {
   canInvite: false,
-  canRemove: false
+  canRemove: false,
+  canManageBooking: false
 };
 
 export function normalizeEmployeeBindingRecord(record: EmployeeBindingRecord): EmployeeBindingAccessProfile {
@@ -91,7 +93,8 @@ export function normalizeEmployeeBindingRecord(record: EmployeeBindingRecord): E
     accessStatus: record.accessStatus ?? DEFAULT_EMPLOYEE_ACCESS_STATUS,
     permissions: {
       canInvite: record.permissions?.canInvite ?? DEFAULT_EMPLOYEE_PERMISSIONS.canInvite,
-      canRemove: record.permissions?.canRemove ?? DEFAULT_EMPLOYEE_PERMISSIONS.canRemove
+      canRemove: record.permissions?.canRemove ?? DEFAULT_EMPLOYEE_PERMISSIONS.canRemove,
+      canManageBooking: record.permissions?.canManageBooking ?? DEFAULT_EMPLOYEE_PERMISSIONS.canManageBooking
     }
   };
 }

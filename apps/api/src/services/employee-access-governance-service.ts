@@ -94,7 +94,8 @@ export class EmployeeAccessGovernanceService {
       binding.accessStatus = 'APPROVED';
       binding.permissions = {
         canInvite: input.permissions?.canInvite ?? false,
-        canRemove: input.permissions?.canRemove ?? false
+        canRemove: input.permissions?.canRemove ?? false,
+        canManageBooking: input.permissions?.canManageBooking ?? false
       };
     } else {
       binding.accessStatus = 'REJECTED';
@@ -132,6 +133,7 @@ export class EmployeeAccessGovernanceService {
     binding.permissions = {
       canInvite: input.permissions.canInvite ?? binding.permissions.canInvite,
       canRemove: input.permissions.canRemove ?? binding.permissions.canRemove,
+      canManageBooking: input.permissions.canManageBooking ?? binding.permissions.canManageBooking,
     };
 
     await this.employeeBindingRepository.upsert(binding);

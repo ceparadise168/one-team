@@ -136,7 +136,8 @@ const accessDecisionSchema = z.object({
   permissions: z
     .object({
       canInvite: z.boolean().optional(),
-      canRemove: z.boolean().optional()
+      canRemove: z.boolean().optional(),
+      canManageBooking: z.boolean().optional()
     })
     .optional()
 });
@@ -148,6 +149,7 @@ const scannerVerifySchema = z.object({
 const permissionsUpdateSchema = z.object({
   canInvite: z.boolean().optional(),
   canRemove: z.boolean().optional(),
+  canManageBooking: z.boolean().optional(),
 });
 
 const offboardEmployeeSchema = z.object({
@@ -1189,7 +1191,7 @@ function getAdminActorId(event: APIGatewayProxyEvent): string {
 async function authorizeAdminOrPermission(input: {
   event: APIGatewayProxyEvent;
   tenantId: string;
-  permission: 'canInvite' | 'canRemove';
+  permission: 'canInvite' | 'canRemove' | 'canManageBooking';
 }): Promise<{
   actorType: 'ADMIN' | 'EMPLOYEE';
   actorId: string;

@@ -97,6 +97,7 @@ test('dynamodb employee binding repository normalizes legacy records and writes 
   assert.equal(written?.accessStatus, 'PENDING');
   assert.deepEqual(written?.permissions, {
     canInvite: false,
-    canRemove: false
+    canRemove: false,
+    canManageBooking: false
   });
 });

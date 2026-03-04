@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../auth-context';
 import {
   useEmployees,
@@ -12,20 +12,29 @@ export function AdminPage() {
   const { apiBaseUrl, accessToken, tenantId, employeeId: myEmployeeId } = useAuth();
   const [tab, setTab] = useState<Tab>('pending');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const {
     employees: pendingEmployees,
+    total: pendingTotal,
     loading: pendingLoading,
     error: pendingError,
     refresh: refreshPending,
-  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'PENDING');
+  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'PENDING', debouncedSearch || undefined);
 
   const {
     employees: allEmployees,
+    total: allTotal,
     loading: allLoading,
     error: allError,
     refresh: refreshAll,
-  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'APPROVED');
+  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'APPROVED', debouncedSearch || undefined);
 
   const loading = tab === 'pending' ? pendingLoading : allLoading;
   const error = tab === 'pending' ? pendingError : allError;
@@ -88,6 +97,24 @@ export function AdminPage() {
           全部員工
         </button>
       </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        placeholder="搜尋工號（前綴）"
+        style={styles.searchInput}
+      />
+
+      {/* Result count */}
+      {!loading && (
+        <p style={styles.resultCount}>
+          {debouncedSearch
+            ? `共 ${tab === 'pending' ? pendingTotal : allTotal} 筆符合`
+            : `最近 ${tab === 'pending' ? pendingEmployees.length : allEmployees.length} 筆（共 ${tab === 'pending' ? pendingTotal : allTotal} 筆）`}
+        </p>
+      )}
 
       {actionMessage && <p style={styles.message}>{actionMessage}</p>}
 
@@ -271,6 +298,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     color: '#333',
     cursor: 'pointer',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #e0e0e0',
+    borderRadius: 8,
+    fontSize: 15,
+    marginBottom: 8,
+    boxSizing: 'border-box' as const,
+    outline: 'none',
+  },
+  resultCount: {
+    fontSize: 13,
+    color: '#999',
+    margin: '0 0 12px 0',
   },
   selfNote: { marginTop: 6, fontSize: 12, color: '#999' },
   errorCard: {

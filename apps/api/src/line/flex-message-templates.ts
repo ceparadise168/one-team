@@ -546,7 +546,7 @@ export function buildServicesMenuFlexMessage(options?: {
   refreshToken?: string;
 }): LineMessage {
   const liffWebBase = options?.liffWebBaseUrl ?? 'https://miniapp.line.me/';
-  const enabledServices = ['volunteer'];
+  const enabledServices = ['volunteer', 'massage'];
 
   const allServices = [
     { id: 'volunteer', label: '志工活動', desc: '查詢與報名志工活動', path: '/volunteer' },

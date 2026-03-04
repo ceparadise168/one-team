@@ -10,6 +10,10 @@ import { CreateActivity } from './features/volunteer/create-activity';
 import { CheckIn } from './features/volunteer/check-in';
 import { Report } from './features/volunteer/report';
 import { AdminPage } from './features/admin/admin-page';
+import { SessionList } from './features/massage/session-list';
+import { AdminSessions } from './features/massage/admin-sessions';
+import { CreateSession } from './features/massage/create-session';
+import { SessionBookings } from './features/massage/session-bookings';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
@@ -36,6 +40,10 @@ function App() {
           <Route path="/volunteer/:activityId/scan" element={<CheckIn mode="organizer" />} />
           <Route path="/volunteer/:activityId/check-in" element={<CheckIn mode="self" />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/massage" element={<SessionList />} />
+          <Route path="/massage/admin" element={<AdminSessions />} />
+          <Route path="/massage/admin/create" element={<CreateSession />} />
+          <Route path="/massage/admin/sessions/:sessionId" element={<SessionBookings />} />
           <Route
             path="/"
             element={

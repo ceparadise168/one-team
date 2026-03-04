@@ -2,7 +2,7 @@ import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from '../lambda.js';
 
 export async function invokeLambda(input: {
-  method: 'GET' | 'POST' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   body?: unknown;
   headers?: Record<string, string>;

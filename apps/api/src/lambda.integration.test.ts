@@ -574,3 +574,89 @@ async function selfRegisterApproveAndLogin(input: {
     accessToken: (login.body as { accessToken: string }).accessToken
   };
 }
+
+test('integration: LIFF admin — list employees, decide access, update permissions', async () => {
+  const suffix = `${Date.now()}-admin`;
+
+  // Create tenant
+  const created = await invokeLambda({
+    method: 'POST',
+    path: '/v1/admin/tenants',
+    headers: adminHeaders,
+    body: {
+      tenantName: `Tenant-${suffix}`,
+      adminEmail: `hr+${suffix}@acme.test`,
+    },
+  });
+  assert.equal(created.statusCode, 201);
+  const tenantId = (created.body as { tenantId: string }).tenantId;
+
+  // Create admin employee with canInvite permission
+  const adminEmp = await selfRegisterApproveAndLogin({
+    tenantId,
+    employeeId: `E-ADMIN-${suffix}`,
+    lineIdToken: `line-id:U-ADMIN-${suffix}`,
+  });
+
+  // Grant canInvite via admin API
+  const grantRes = await invokeLambda({
+    method: 'PUT',
+    path: `/v1/admin/tenants/${tenantId}/employees/${adminEmp.employeeId}/permissions`,
+    headers: adminHeaders,
+    body: { canInvite: true },
+  });
+  assert.equal(grantRes.statusCode, 200);
+
+  // Create a pending employee
+  await invokeLambda({
+    method: 'POST',
+    path: '/v1/public/self-register',
+    body: {
+      tenantId,
+      lineIdToken: `line-id:U-PENDING-${suffix}`,
+      employeeId: `E-PENDING-${suffix}`,
+    },
+  });
+
+  const empAdminHeaders = { authorization: `Bearer ${adminEmp.accessToken}` };
+
+  // LIFF: list employees
+  const listRes = await invokeLambda({
+    method: 'GET',
+    path: `/v1/liff/tenants/${tenantId}/employees?status=PENDING`,
+    headers: empAdminHeaders,
+  });
+  assert.equal(listRes.statusCode, 200);
+  const employees = (listRes.body as { employees: Array<{ employeeId: string }> }).employees;
+  assert.ok(employees.some((e) => e.employeeId === `E-PENDING-${suffix}`));
+
+  // LIFF: approve pending employee
+  const decideRes = await invokeLambda({
+    method: 'POST',
+    path: `/v1/liff/tenants/${tenantId}/employees/E-PENDING-${suffix}/access-decision`,
+    headers: empAdminHeaders,
+    body: { decision: 'APPROVE' },
+  });
+  assert.equal(decideRes.statusCode, 200);
+
+  // LIFF: update permissions
+  const permRes = await invokeLambda({
+    method: 'PUT',
+    path: `/v1/liff/tenants/${tenantId}/employees/E-PENDING-${suffix}/permissions`,
+    headers: empAdminHeaders,
+    body: { canInvite: true },
+  });
+  assert.equal(permRes.statusCode, 200);
+  const permBody = permRes.body as { ok: boolean; permissions: { canInvite: boolean } };
+  assert.equal(permBody.ok, true);
+  assert.equal(permBody.permissions.canInvite, true);
+
+  // Verify: cannot modify own permissions
+  const selfRes = await invokeLambda({
+    method: 'PUT',
+    path: `/v1/liff/tenants/${tenantId}/employees/${adminEmp.employeeId}/permissions`,
+    headers: empAdminHeaders,
+    body: { canRemove: true },
+  });
+  assert.equal(selfRes.statusCode, 400);
+});

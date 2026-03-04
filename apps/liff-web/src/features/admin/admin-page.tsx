@@ -7,6 +7,15 @@ import {
   ERROR_NO_PERMISSION,
 } from './use-admin';
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 type Tab = 'pending' | 'all';
 
 export function AdminPage() {
@@ -14,32 +23,18 @@ export function AdminPage() {
   const [tab, setTab] = useState<Tab>('pending');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
+  const status = tab === 'pending' ? 'PENDING' as const : 'APPROVED' as const;
   const {
-    employees: pendingEmployees,
-    total: pendingTotal,
-    loading: pendingLoading,
-    error: pendingError,
-    refresh: refreshPending,
-  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'PENDING', debouncedSearch || undefined);
+    employees,
+    total,
+    loading,
+    error,
+    refresh,
+  } = useEmployees(apiBaseUrl, accessToken, tenantId, status, debouncedSearch || undefined);
 
-  const {
-    employees: allEmployees,
-    total: allTotal,
-    loading: allLoading,
-    error: allError,
-    refresh: refreshAll,
-  } = useEmployees(apiBaseUrl, accessToken, tenantId, 'APPROVED', debouncedSearch || undefined);
-
-  const loading = tab === 'pending' ? pendingLoading : allLoading;
-
-  if (pendingError === ERROR_NO_PERMISSION || allError === ERROR_NO_PERMISSION) {
+  if (error === ERROR_NO_PERMISSION) {
     return (
       <div style={styles.container}>
         <div style={styles.errorCard}>
@@ -55,8 +50,7 @@ export function AdminPage() {
       setActionMessage(null);
       await decideEmployeeAccess(apiBaseUrl, accessToken, tenantId, empId, decision);
       setActionMessage(decision === 'APPROVE' ? '已核准' : '已拒絕');
-      refreshPending();
-      refreshAll();
+      refresh();
     } catch (e) {
       setActionMessage((e as Error).message);
     }
@@ -72,7 +66,7 @@ export function AdminPage() {
       await updateEmployeePermissions(apiBaseUrl, accessToken, tenantId, empId, {
         [permission]: value,
       });
-      refreshAll();
+      refresh();
     } catch (e) {
       setActionMessage((e as Error).message);
     }
@@ -88,7 +82,7 @@ export function AdminPage() {
           style={tab === 'pending' ? styles.tabActive : styles.tab}
           onClick={() => setTab('pending')}
         >
-          待審核{pendingEmployees.length > 0 ? ` (${pendingEmployees.length})` : ''}
+          待審核
         </button>
         <button
           style={tab === 'all' ? styles.tabActive : styles.tab}
@@ -111,8 +105,8 @@ export function AdminPage() {
       {!loading && (
         <p style={styles.resultCount}>
           {debouncedSearch
-            ? `共 ${tab === 'pending' ? pendingTotal : allTotal} 筆符合`
-            : `最近 ${tab === 'pending' ? pendingEmployees.length : allEmployees.length} 筆（共 ${tab === 'pending' ? pendingTotal : allTotal} 筆）`}
+            ? `共 ${total} 筆符合`
+            : `最近 ${employees.length} 筆（共 ${total} 筆）`}
         </p>
       )}
 
@@ -120,47 +114,43 @@ export function AdminPage() {
 
       {loading ? (
         <p style={styles.empty}>載入中...</p>
+      ) : employees.length === 0 ? (
+        <p style={styles.empty}>
+          {tab === 'pending' ? '沒有待審核的申請' : '尚無已核准的員工'}
+        </p>
       ) : tab === 'pending' ? (
-        /* Pending tab */
-        pendingEmployees.length === 0 ? (
-          <p style={styles.empty}>沒有待審核的申請</p>
-        ) : (
-          <div style={styles.list}>
-            {pendingEmployees.map((emp) => (
-              <div key={emp.employeeId} style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <span style={styles.cardName}>{emp.nickname || emp.employeeId}</span>
-                  <span style={styles.pendingBadge}>待審核</span>
-                </div>
-                <p style={styles.cardMeta}>
-                  {emp.employeeId}
-                  {emp.accessRequestedAt &&
-                    ` · ${new Date(emp.accessRequestedAt).toLocaleDateString('zh-TW')}`}
-                </p>
-                <div style={styles.actionRow}>
-                  <button
-                    style={styles.approveBtn}
-                    onClick={() => handleDecision(emp.employeeId, 'APPROVE')}
-                  >
-                    核准
-                  </button>
-                  <button
-                    style={styles.rejectBtn}
-                    onClick={() => handleDecision(emp.employeeId, 'REJECT')}
-                  >
-                    拒絕
-                  </button>
-                </div>
+        <div style={styles.list}>
+          {employees.map((emp) => (
+            <div key={emp.employeeId} style={styles.card}>
+              <div style={styles.cardHeader}>
+                <span style={styles.cardName}>{emp.nickname || emp.employeeId}</span>
+                <span style={styles.pendingBadge}>待審核</span>
               </div>
-            ))}
-          </div>
-        )
-      ) : /* All employees tab */
-      allEmployees.length === 0 ? (
-        <p style={styles.empty}>尚無已核准的員工</p>
+              <p style={styles.cardMeta}>
+                {emp.employeeId}
+                {emp.accessRequestedAt &&
+                  ` · ${new Date(emp.accessRequestedAt).toLocaleDateString('zh-TW')}`}
+              </p>
+              <div style={styles.actionRow}>
+                <button
+                  style={styles.approveBtn}
+                  onClick={() => handleDecision(emp.employeeId, 'APPROVE')}
+                >
+                  核准
+                </button>
+                <button
+                  style={styles.rejectBtn}
+                  onClick={() => handleDecision(emp.employeeId, 'REJECT')}
+                >
+                  拒絕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div style={styles.list}>
-          {allEmployees.map((emp) => {
+          {employees.map((emp) => {
             const isSelf = emp.employeeId === myEmployeeId;
             return (
               <div key={emp.employeeId} style={styles.card}>

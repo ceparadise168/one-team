@@ -18,7 +18,7 @@ export function useEmployees(
   apiBaseUrl: string,
   accessToken: string,
   tenantId: string,
-  status?: string,
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED',
   search?: string
 ) {
   const [employees, setEmployees] = useState<Employee[]>([]);

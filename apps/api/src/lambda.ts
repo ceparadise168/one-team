@@ -145,6 +145,11 @@ const scannerVerifySchema = z.object({
   payload: z.string().min(1)
 });
 
+const permissionsUpdateSchema = z.object({
+  canInvite: z.boolean().optional(),
+  canRemove: z.boolean().optional(),
+});
+
 const offboardEmployeeSchema = z.object({
   actorId: z.string().min(1).optional()
 });
@@ -665,15 +670,12 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         permission: 'canInvite',
       });
 
-      const body = parseBody(event) as Record<string, unknown>;
+      const permissions = permissionsUpdateSchema.parse(parseBody(event));
       const profile = await employeeAccessGovernanceService.updatePermissions({
         tenantId: liffPermissionsMatch[1],
         targetEmployeeId: liffPermissionsMatch[2],
         callerEmployeeId: principal.employeeId,
-        permissions: {
-          canInvite: typeof body.canInvite === 'boolean' ? body.canInvite : undefined,
-          canRemove: typeof body.canRemove === 'boolean' ? body.canRemove : undefined,
-        },
+        permissions,
       });
 
       return jsonResponse(200, { ok: true, permissions: profile.permissions }, responseOptions);
@@ -703,15 +705,12 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     );
     if (method === 'PUT' && adminPermissionsMatch) {
       assertAdminAuthorized(event);
-      const body = parseBody(event) as Record<string, unknown>;
+      const permissions = permissionsUpdateSchema.parse(parseBody(event));
       const profile = await employeeAccessGovernanceService.updatePermissions({
         tenantId: adminPermissionsMatch[1],
         targetEmployeeId: adminPermissionsMatch[2],
         callerEmployeeId: getAdminActorId(event),
-        permissions: {
-          canInvite: typeof body.canInvite === 'boolean' ? body.canInvite : undefined,
-          canRemove: typeof body.canRemove === 'boolean' ? body.canRemove : undefined,
-        },
+        permissions,
       });
 
       return jsonResponse(200, { ok: true, permissions: profile.permissions }, responseOptions);

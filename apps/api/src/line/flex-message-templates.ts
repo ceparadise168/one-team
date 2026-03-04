@@ -550,6 +550,7 @@ export function buildServicesMenuFlexMessage(options?: {
 
   const allServices = [
     { id: 'volunteer', label: '志工活動', desc: '查詢與報名志工活動', path: '/volunteer' },
+    { id: 'massage', label: '按摩預約', desc: '預約公司按摩服務', path: '/massage' },
     { id: 'voting', label: '投票', desc: '參與公司投票', path: '/voting' },
     { id: 'packages', label: '包裹簽收', desc: '簽收包裹通知', path: '/packages' },
     { id: 'repair', label: '總務報修', desc: '提交報修申請', path: '/repair' },
@@ -633,7 +634,7 @@ export function buildServicesMenuFlexMessage(options?: {
                   type: 'uri',
                   label: svc.label,
                   uri: options?.accessToken
-                    ? `${liffWebBase}${svc.path}?tenantId=${options.tenantId ?? ''}&accessToken=${options.accessToken}${options.refreshToken ? `&refreshToken=${options.refreshToken}` : ''}`
+                    ? `${liffWebBase}${svc.path}?tenantId=${encodeURIComponent(options.tenantId ?? '')}&accessToken=${encodeURIComponent(options.accessToken)}${options.refreshToken ? `&refreshToken=${encodeURIComponent(options.refreshToken)}` : ''}`
                     : `${liffWebBase}${svc.path}`,
                 }
               : {
@@ -652,7 +653,7 @@ export function buildServicesMenuFlexMessage(options?: {
 
   if (options?.isAdmin) {
     const adminUrl = options.accessToken
-      ? `${liffWebBase}/admin?accessToken=${encodeURIComponent(options.accessToken)}&tenantId=${encodeURIComponent(options?.tenantId ?? '')}&refreshToken=${encodeURIComponent(options?.refreshToken ?? '')}`
+      ? `${liffWebBase}/admin?tenantId=${encodeURIComponent(options.tenantId ?? '')}&accessToken=${encodeURIComponent(options.accessToken)}${options.refreshToken ? `&refreshToken=${encodeURIComponent(options.refreshToken)}` : ''}`
       : `${liffWebBase}/admin`;
 
     bubbles.push({

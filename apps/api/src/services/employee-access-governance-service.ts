@@ -110,6 +110,34 @@ export class EmployeeAccessGovernanceService {
     return this.toProfile(binding);
   }
 
+  async updatePermissions(input: {
+    tenantId: string;
+    targetEmployeeId: string;
+    callerEmployeeId: string;
+    permissions: Partial<EmployeePermissions>;
+  }): Promise<AccessRequestProfile> {
+    if (input.targetEmployeeId === input.callerEmployeeId) {
+      throw new ValidationError('Cannot modify own permissions');
+    }
+
+    const binding = await this.requireActiveBindingByEmployee({
+      tenantId: input.tenantId,
+      employeeId: input.targetEmployeeId,
+    });
+
+    if (binding.accessStatus !== 'APPROVED') {
+      throw new ValidationError('Can only set permissions on approved employees');
+    }
+
+    binding.permissions = {
+      canInvite: input.permissions.canInvite ?? binding.permissions.canInvite,
+      canRemove: input.permissions.canRemove ?? binding.permissions.canRemove,
+    };
+
+    await this.employeeBindingRepository.upsert(binding);
+    return this.toProfile(binding);
+  }
+
   async requireEmployeePermission(input: {
     tenantId: string;
     lineUserId: string;

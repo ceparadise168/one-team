@@ -9,6 +9,7 @@ import { ActivityDetail } from './features/volunteer/activity-detail';
 import { CreateActivity } from './features/volunteer/create-activity';
 import { CheckIn } from './features/volunteer/check-in';
 import { Report } from './features/volunteer/report';
+import { AdminPage } from './features/admin/admin-page';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
@@ -34,6 +35,7 @@ function App() {
           <Route path="/volunteer/:activityId/report" element={<Report />} />
           <Route path="/volunteer/:activityId/scan" element={<CheckIn mode="organizer" />} />
           <Route path="/volunteer/:activityId/check-in" element={<CheckIn mode="self" />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route
             path="/"
             element={

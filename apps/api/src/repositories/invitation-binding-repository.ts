@@ -38,6 +38,7 @@ export interface EmployeeBindingRepository {
   findActiveByLineUserId(tenantId: string, lineUserId: string): Promise<EmployeeBindingRecord | null>;
   findActiveByEmployeeId(tenantId: string, employeeId: string): Promise<EmployeeBindingRecord | null>;
   listByTenant(tenantId: string): Promise<EmployeeBindingRecord[]>;
+  listByTenantWithPrefix(tenantId: string, employeeIdPrefix: string): Promise<EmployeeBindingRecord[]>;
   upsert(record: EmployeeBindingRecord): Promise<void>;
 }
 
@@ -167,6 +168,12 @@ export class InMemoryEmployeeBindingRepository implements EmployeeBindingReposit
   async listByTenant(tenantId: string): Promise<EmployeeBindingRecord[]> {
     return [...this.byEmployee.values()]
       .filter(r => r.tenantId === tenantId)
+      .map(normalizeEmployeeBindingRecord);
+  }
+
+  async listByTenantWithPrefix(tenantId: string, employeeIdPrefix: string): Promise<EmployeeBindingRecord[]> {
+    return [...this.byEmployee.values()]
+      .filter(r => r.tenantId === tenantId && r.employeeId.startsWith(employeeIdPrefix))
       .map(normalizeEmployeeBindingRecord);
   }
 

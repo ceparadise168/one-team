@@ -528,6 +528,24 @@ export class DynamoDbEmployeeBindingRepository implements EmployeeBindingReposit
       .map(normalizeEmployeeBindingRecord);
   }
 
+  async listByTenantWithPrefix(tenantId: string, employeeIdPrefix: string): Promise<EmployeeBindingRecord[]> {
+    const response = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+        ExpressionAttributeValues: {
+          ':pk': `TENANT#${tenantId}`,
+          ':skPrefix': `BINDING#${employeeIdPrefix}`
+        }
+      })
+    );
+
+    return (response.Items ?? [])
+      .map(item => stripMetadata<EmployeeBindingRecord>(item as Record<string, unknown>))
+      .filter((r): r is EmployeeBindingRecord => r !== null)
+      .map(normalizeEmployeeBindingRecord);
+  }
+
   async upsert(record: EmployeeBindingRecord): Promise<void> {
     const normalized = normalizeEmployeeBindingRecord(record);
     await this.client.send(

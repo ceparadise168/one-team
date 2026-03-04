@@ -87,6 +87,7 @@ export class PlatformStack extends Stack {
         TOKEN_REVOCATIONS_TABLE_NAME: `${prefix}-token-revocations`,
         AUDIT_EVENTS_TABLE_NAME: `${prefix}-audit-events`,
         VOLUNTEER_TABLE_NAME: `${prefix}-volunteer`,
+        MASSAGE_TABLE_NAME: `${prefix}-employees`,
         DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
         CORS_ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:5174' // overridden below to include CloudFront domain
       }

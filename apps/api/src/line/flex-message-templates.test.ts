@@ -147,6 +147,7 @@ describe('buildServicesMenuFlexMessage', () => {
     const lastBubble = contents.contents[6];
     const json = JSON.stringify(lastBubble);
     assert.ok(json.includes('管理後台'));
-    assert.ok(json.includes('action=admin_dashboard'));
+    assert.ok(json.includes('"type":"uri"'));
+    assert.ok(json.includes('/admin'));
   });
 });

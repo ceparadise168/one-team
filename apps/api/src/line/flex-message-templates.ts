@@ -651,6 +651,10 @@ export function buildServicesMenuFlexMessage(options?: {
   }
 
   if (options?.isAdmin) {
+    const adminUrl = options.accessToken
+      ? `${liffWebBase}/admin?accessToken=${encodeURIComponent(options.accessToken)}&tenantId=${encodeURIComponent(options?.tenantId ?? '')}&refreshToken=${encodeURIComponent(options?.refreshToken ?? '')}`
+      : `${liffWebBase}/admin`;
+
     bubbles.push({
       type: 'bubble',
       body: {
@@ -661,16 +665,16 @@ export function buildServicesMenuFlexMessage(options?: {
             type: 'text',
             text: '管理後台',
             weight: 'bold',
-            size: 'lg'
+            size: 'lg',
           },
           {
             type: 'text',
-            text: '管理員工註冊與審核',
+            text: '審核員工申請、管理權限',
             margin: 'sm',
             color: '#666666',
-            wrap: true
-          }
-        ]
+            wrap: true,
+          },
+        ],
       },
       footer: {
         type: 'box',
@@ -679,16 +683,15 @@ export function buildServicesMenuFlexMessage(options?: {
           {
             type: 'button',
             action: {
-              type: 'postback',
+              type: 'uri',
               label: '管理後台',
-              data: 'action=admin_dashboard',
-              displayText: '管理後台'
+              uri: adminUrl,
             },
             style: 'primary',
-            color: '#1a73e8'
-          }
-        ]
-      }
+            color: '#1a73e8',
+          },
+        ],
+      },
     });
   }
 

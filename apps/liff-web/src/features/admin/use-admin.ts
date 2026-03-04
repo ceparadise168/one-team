@@ -12,6 +12,8 @@ interface Employee {
 
 export type { Employee };
 
+export const ERROR_NO_PERMISSION = '您沒有管理權限';
+
 export function useEmployees(
   apiBaseUrl: string,
   accessToken: string,
@@ -34,7 +36,7 @@ export function useEmployees(
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
-        if (!r.ok) throw new Error(r.status === 403 ? '您沒有管理權限' : '載入失敗');
+        if (!r.ok) throw new Error(r.status === 403 ? ERROR_NO_PERMISSION : '載入失敗');
         return r.json();
       })
       .then((data) => {

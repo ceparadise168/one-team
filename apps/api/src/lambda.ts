@@ -59,6 +59,7 @@ import {
 } from './security/line-credential-store.js';
 import { AuthSessionService } from './services/auth-session-service.js';
 import { DigitalIdService } from './services/digital-id-service.js';
+import { DEFAULT_EMPLOYEE_PERMISSIONS } from './domain/invitation-binding.js';
 import { InvitationBindingService } from './services/invitation-binding-service.js';
 import { OffboardingService } from './services/offboarding-service.js';
 import { EmployeeAccessGovernanceService } from './services/employee-access-governance-service.js';
@@ -520,40 +521,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const employeesListMatch = path.match(/^\/v1\/admin\/tenants\/([^/]+)\/employees$/);
     if (method === 'GET' && employeesListMatch) {
       assertAdminAuthorized(event);
-      const tenantId = employeesListMatch[1];
-      const statusFilter = event.queryStringParameters?.status;
-      const search = event.queryStringParameters?.search;
-      const limitParam = event.queryStringParameters?.limit;
-      const limit = search ? undefined : (limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 200) : 10);
-
-      const bindings = search
-        ? await employeeBindingRepository.listByTenantWithPrefix(tenantId, search)
-        : await employeeBindingRepository.listByTenant(tenantId);
-      const activeBindings = bindings.filter(b => b.employmentStatus === 'ACTIVE');
-      const filtered = statusFilter
-        ? activeBindings.filter(b => (b.accessStatus ?? 'PENDING') === statusFilter)
-        : activeBindings;
-
-      const sorted = filtered.sort((a, b) => {
-        const aTime = a.boundAt ?? '';
-        const bTime = b.boundAt ?? '';
-        return bTime.localeCompare(aTime);
-      });
-
-      const result = limit ? sorted.slice(0, limit) : sorted;
-
-      const employees = result.map(b => ({
-        employeeId: b.employeeId,
-        nickname: b.nickname,
-        accessStatus: b.accessStatus ?? 'PENDING',
-        boundAt: b.boundAt,
-        accessRequestedAt: b.accessRequestedAt,
-        accessReviewedAt: b.accessReviewedAt,
-        accessReviewedBy: b.accessReviewedBy,
-        permissions: b.permissions ?? { canInvite: false, canRemove: false },
-      }));
-
-      return jsonResponse(200, { employees, total: filtered.length }, responseOptions);
+      const listed = await listEmployees(employeeBindingRepository, employeesListMatch[1], event.queryStringParameters, true);
+      return jsonResponse(200, listed, responseOptions);
     }
 
     if (method === 'POST' && path === '/v1/public/self-register') {
@@ -646,39 +615,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         permission: 'canInvite',
       });
 
-      const tenantId = liffEmployeesMatch[1];
-      const statusFilter = event.queryStringParameters?.status;
-      const search = event.queryStringParameters?.search;
-      const limitParam = event.queryStringParameters?.limit;
-      const limit = search ? undefined : (limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 200) : 10);
-
-      const bindings = search
-        ? await employeeBindingRepository.listByTenantWithPrefix(tenantId, search)
-        : await employeeBindingRepository.listByTenant(tenantId);
-      const activeBindings = bindings.filter((b) => b.employmentStatus === 'ACTIVE');
-      const filtered = statusFilter
-        ? activeBindings.filter((b) => (b.accessStatus ?? 'PENDING') === statusFilter)
-        : activeBindings;
-
-      const sorted = filtered.sort((a, b) => {
-        const aTime = a.boundAt ?? '';
-        const bTime = b.boundAt ?? '';
-        return bTime.localeCompare(aTime);
-      });
-
-      const result = limit ? sorted.slice(0, limit) : sorted;
-
-      const employees = result.map((b) => ({
-        employeeId: b.employeeId,
-        nickname: b.nickname,
-        accessStatus: b.accessStatus ?? 'PENDING',
-        boundAt: b.boundAt,
-        accessRequestedAt: b.accessRequestedAt,
-        accessReviewedAt: b.accessReviewedAt,
-        permissions: b.permissions ?? { canInvite: false, canRemove: false },
-      }));
-
-      return jsonResponse(200, { employees, total: filtered.length }, responseOptions);
+      const listed = await listEmployees(employeeBindingRepository, liffEmployeesMatch[1], event.queryStringParameters, false);
+      return jsonResponse(200, listed, responseOptions);
     }
 
     // LIFF: decide employee access (requires canInvite)
@@ -1174,6 +1112,42 @@ function getHeaderCaseInsensitive(
   }
 
   return undefined;
+}
+
+async function listEmployees(
+  repo: EmployeeBindingRepository,
+  tenantId: string,
+  params: Record<string, string | undefined> | null | undefined,
+  includeReviewedBy: boolean
+) {
+  const statusFilter = params?.status;
+  const search = params?.search;
+  const limitParam = params?.limit;
+  const limit = search ? undefined : (limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 200) : 10);
+
+  const bindings = search
+    ? await repo.listByTenantWithPrefix(tenantId, search)
+    : await repo.listByTenant(tenantId);
+
+  const filtered = bindings
+    .filter(b => b.employmentStatus === 'ACTIVE')
+    .filter(b => statusFilter ? (b.accessStatus ?? 'PENDING') === statusFilter : true)
+    .sort((a, b) => (b.boundAt ?? '').localeCompare(a.boundAt ?? ''));
+
+  const result = limit ? filtered.slice(0, limit) : filtered;
+
+  const employees = result.map(b => ({
+    employeeId: b.employeeId,
+    nickname: b.nickname,
+    accessStatus: b.accessStatus ?? 'PENDING',
+    boundAt: b.boundAt,
+    accessRequestedAt: b.accessRequestedAt,
+    accessReviewedAt: b.accessReviewedAt,
+    ...(includeReviewedBy ? { accessReviewedBy: b.accessReviewedBy } : {}),
+    permissions: b.permissions ?? DEFAULT_EMPLOYEE_PERMISSIONS,
+  }));
+
+  return { employees, total: filtered.length };
 }
 
 function assertAdminAuthorized(event: APIGatewayProxyEvent): void {

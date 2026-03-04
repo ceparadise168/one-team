@@ -4,6 +4,7 @@ import {
   useEmployees,
   decideEmployeeAccess,
   updateEmployeePermissions,
+  ERROR_NO_PERMISSION,
 } from './use-admin';
 
 type Tab = 'pending' | 'all';
@@ -37,9 +38,8 @@ export function AdminPage() {
   } = useEmployees(apiBaseUrl, accessToken, tenantId, 'APPROVED', debouncedSearch || undefined);
 
   const loading = tab === 'pending' ? pendingLoading : allLoading;
-  const error = tab === 'pending' ? pendingError : allError;
 
-  if (error === '您沒有管理權限') {
+  if (pendingError === ERROR_NO_PERMISSION || allError === ERROR_NO_PERMISSION) {
     return (
       <div style={styles.container}>
         <div style={styles.errorCard}>

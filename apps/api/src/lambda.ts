@@ -538,7 +538,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         boundAt: b.boundAt,
         accessRequestedAt: b.accessRequestedAt,
         accessReviewedAt: b.accessReviewedAt,
-        accessReviewedBy: b.accessReviewedBy
+        accessReviewedBy: b.accessReviewedBy,
+        permissions: b.permissions ?? { canInvite: false, canRemove: false },
       }));
 
       return jsonResponse(200, { employees }, responseOptions);
@@ -619,6 +620,102 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       }
     }
 
+    // LIFF: list employees (requires canInvite or canRemove)
+    const liffEmployeesMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/employees$/);
+    if (method === 'GET' && liffEmployeesMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: liffEmployeesMatch[1],
+      });
+
+      await employeeAccessGovernanceService.requireEmployeePermission({
+        tenantId: principal.tenantId,
+        lineUserId: principal.lineUserId,
+        permission: 'canInvite',
+      });
+
+      const tenantId = liffEmployeesMatch[1];
+      const statusFilter = event.queryStringParameters?.status;
+      const bindings = await employeeBindingRepository.listByTenant(tenantId);
+      const activeBindings = bindings.filter((b) => b.employmentStatus === 'ACTIVE');
+      const filtered = statusFilter
+        ? activeBindings.filter((b) => (b.accessStatus ?? 'PENDING') === statusFilter)
+        : activeBindings;
+
+      const employees = filtered.map((b) => ({
+        employeeId: b.employeeId,
+        nickname: b.nickname,
+        accessStatus: b.accessStatus ?? 'PENDING',
+        boundAt: b.boundAt,
+        accessRequestedAt: b.accessRequestedAt,
+        accessReviewedAt: b.accessReviewedAt,
+        permissions: b.permissions ?? { canInvite: false, canRemove: false },
+      }));
+
+      return jsonResponse(200, { employees }, responseOptions);
+    }
+
+    // LIFF: decide employee access (requires canInvite)
+    const liffDecisionMatch = path.match(
+      /^\/v1\/liff\/tenants\/([^/]+)\/employees\/([^/]+)\/access-decision$/
+    );
+    if (method === 'POST' && liffDecisionMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: liffDecisionMatch[1],
+      });
+
+      await employeeAccessGovernanceService.requireEmployeePermission({
+        tenantId: principal.tenantId,
+        lineUserId: principal.lineUserId,
+        permission: 'canInvite',
+      });
+
+      const payload = accessDecisionSchema.parse(parseBody(event));
+      const profile = await employeeAccessGovernanceService.decideAccess({
+        tenantId: liffDecisionMatch[1],
+        employeeId: liffDecisionMatch[2],
+        reviewerId: principal.employeeId,
+        decision: payload.decision,
+        permissions: payload.permissions,
+      });
+
+      return jsonResponse(200, profile, responseOptions);
+    }
+
+    // LIFF: update employee permissions (requires canInvite)
+    const liffPermissionsMatch = path.match(
+      /^\/v1\/liff\/tenants\/([^/]+)\/employees\/([^/]+)\/permissions$/
+    );
+    if (method === 'PUT' && liffPermissionsMatch) {
+      const principal = await requireEmployeePrincipal({
+        event,
+        authSessionService,
+        requiredTenantId: liffPermissionsMatch[1],
+      });
+
+      await employeeAccessGovernanceService.requireEmployeePermission({
+        tenantId: principal.tenantId,
+        lineUserId: principal.lineUserId,
+        permission: 'canInvite',
+      });
+
+      const body = parseBody(event) as Record<string, unknown>;
+      const profile = await employeeAccessGovernanceService.updatePermissions({
+        tenantId: liffPermissionsMatch[1],
+        targetEmployeeId: liffPermissionsMatch[2],
+        callerEmployeeId: principal.employeeId,
+        permissions: {
+          canInvite: typeof body.canInvite === 'boolean' ? body.canInvite : undefined,
+          canRemove: typeof body.canRemove === 'boolean' ? body.canRemove : undefined,
+        },
+      });
+
+      return jsonResponse(200, { ok: true, permissions: profile.permissions }, responseOptions);
+    }
+
     const accessDecisionMatch = path.match(
       /^\/v1\/admin\/tenants\/([^/]+)\/employees\/([^/]+)\/access-decision$/
     );
@@ -635,6 +732,26 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       });
 
       return jsonResponse(200, profile, responseOptions);
+    }
+
+    // Admin: update employee permissions
+    const adminPermissionsMatch = path.match(
+      /^\/v1\/admin\/tenants\/([^/]+)\/employees\/([^/]+)\/permissions$/
+    );
+    if (method === 'PUT' && adminPermissionsMatch) {
+      assertAdminAuthorized(event);
+      const body = parseBody(event) as Record<string, unknown>;
+      const profile = await employeeAccessGovernanceService.updatePermissions({
+        tenantId: adminPermissionsMatch[1],
+        targetEmployeeId: adminPermissionsMatch[2],
+        callerEmployeeId: getAdminActorId(event),
+        permissions: {
+          canInvite: typeof body.canInvite === 'boolean' ? body.canInvite : undefined,
+          canRemove: typeof body.canRemove === 'boolean' ? body.canRemove : undefined,
+        },
+      });
+
+      return jsonResponse(200, { ok: true, permissions: profile.permissions }, responseOptions);
     }
 
     const offboardMatch = path.match(

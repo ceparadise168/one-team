@@ -66,6 +66,8 @@ import { EmployeeAccessGovernanceService } from './services/employee-access-gove
 import { TenantOnboardingService } from './services/tenant-onboarding-service.js';
 import { AdminAuthService } from './services/admin-auth-service.js';
 import { SelfRegistrationService } from './services/self-registration-service.js';
+import { MassageBookingService } from './services/massage-booking-service.js';
+import { InMemoryMassageBookingRepository } from './repositories/massage-booking-repository.js';
 import { VolunteerService } from './services/volunteer-service.js';
 import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
@@ -429,6 +431,16 @@ const volunteerService = new VolunteerService(volunteerRepository, employeeBindi
   signingSecret: process.env.ACCESS_TOKEN_SECRET ?? 'dev-signing-secret',
   now: () => new Date(),
 });
+
+const massageBookingRepository = new InMemoryMassageBookingRepository();
+const massageBookingService = new MassageBookingService(
+  massageBookingRepository,
+  employeeBindingRepository,
+  {
+    tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
+    now: () => new Date(),
+  }
+);
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const startTime = Date.now();
@@ -945,6 +957,111 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         },
         body: csv,
       };
+    }
+
+    // --- Massage Booking Routes ---
+
+    // List sessions / Create session
+    const massageSessionsMatch = path.match(/^\/v1\/massage\/sessions$/);
+    if (massageSessionsMatch) {
+      if (method === 'GET') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const fromDate = event.queryStringParameters?.fromDate;
+        const sessions = await massageBookingService.listSessions({ fromDate });
+        return jsonResponse(200, { sessions }, responseOptions);
+      }
+      if (method === 'POST') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await massageBookingService.createSession({
+          date: body.date as string,
+          startAt: body.startAt as string,
+          endAt: body.endAt as string,
+          location: body.location as string,
+          quota: body.quota as number,
+          mode: body.mode as 'FIRST_COME' | 'LOTTERY',
+          openAt: body.openAt as string,
+          drawAt: (body.drawAt as string) ?? null,
+          createdByEmployeeId: principal.employeeId,
+        });
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    // Single session
+    const massageSessionMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)$/);
+    if (massageSessionMatch) {
+      const sessionId = massageSessionMatch[1];
+      if (method === 'GET') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const session = await massageBookingService.getSession(sessionId);
+        return jsonResponse(200, session, responseOptions);
+      }
+    }
+
+    // Cancel session
+    const massageCancelSessionMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/cancel$/);
+    if (massageCancelSessionMatch && method === 'POST') {
+      const sessionId = massageCancelSessionMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await massageBookingService.cancelSession(sessionId, principal.employeeId, body.note as string);
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Book session
+    const massageBookMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/book$/);
+    if (massageBookMatch && method === 'POST') {
+      const sessionId = massageBookMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const result = await massageBookingService.bookSession(sessionId, principal.employeeId, principal.lineUserId);
+      return jsonResponse(201, result, responseOptions);
+    }
+
+    // Session bookings list (admin)
+    const massageSessionBookingsMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/bookings$/);
+    if (massageSessionBookingsMatch && method === 'GET') {
+      const sessionId = massageSessionBookingsMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const bookings = await massageBookingService.listSessionBookings(sessionId, principal.employeeId);
+      return jsonResponse(200, { bookings }, responseOptions);
+    }
+
+    // My bookings
+    const massageMyBookingsMatch = path.match(/^\/v1\/massage\/my-bookings$/);
+    if (massageMyBookingsMatch && method === 'GET') {
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const bookings = await massageBookingService.listMyBookings(principal.employeeId);
+      return jsonResponse(200, { bookings }, responseOptions);
+    }
+
+    // Cancel booking (employee)
+    const massageCancelBookingMatch = path.match(/^\/v1\/massage\/bookings\/([^/]+)\/cancel$/);
+    if (massageCancelBookingMatch && method === 'POST') {
+      const bookingId = massageCancelBookingMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await massageBookingService.cancelBooking(bookingId, principal.employeeId, body.reason as string);
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Admin cancel booking
+    const massageAdminCancelMatch = path.match(/^\/v1\/massage\/bookings\/([^/]+)\/admin-cancel$/);
+    if (massageAdminCancelMatch && method === 'POST') {
+      const bookingId = massageAdminCancelMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = parseBody(event) as Record<string, unknown>;
+      await massageBookingService.adminCancelBooking(bookingId, principal.employeeId, body.reason as string);
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // Execute draw (called by EventBridge or admin)
+    const massageDrawMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/draw$/);
+    if (massageDrawMatch && method === 'POST') {
+      const sessionId = massageDrawMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      await massageBookingService.executeDraw(sessionId);
+      return jsonResponse(200, { ok: true }, responseOptions);
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);

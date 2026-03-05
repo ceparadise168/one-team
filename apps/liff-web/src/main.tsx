@@ -18,6 +18,7 @@ import { ScheduleManagement } from './features/massage/schedule-management';
 import { AuthGuard } from './auth-guard';
 import { TripList } from './features/camping/trip-list';
 import { CreateTrip } from './features/camping/create-trip';
+import { TripDetail } from './features/camping/trip-detail';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
@@ -51,6 +52,7 @@ function App() {
           <Route path="/massage/admin/schedules" element={<AuthGuard><ScheduleManagement /></AuthGuard>} />
           <Route path="/camping" element={<AuthGuard><TripList /></AuthGuard>} />
           <Route path="/camping/new" element={<AuthGuard><CreateTrip /></AuthGuard>} />
+          <Route path="/camping/:tripId" element={<AuthGuard><TripDetail /></AuthGuard>} />
           <Route
             path="/"
             element={

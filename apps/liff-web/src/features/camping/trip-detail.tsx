@@ -33,8 +33,9 @@ export function TripDetail() {
 
   const isOpen = detail.trip.status === 'OPEN';
 
-  const withRefresh = (fn: (...args: any[]) => Promise<any>) =>
-    async (...args: any[]) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const withRefresh = <T extends (...args: any[]) => Promise<unknown>>(fn: T) =>
+    async (...args: Parameters<T>) => {
       try {
         setMutationError(null);
         await fn(...args);

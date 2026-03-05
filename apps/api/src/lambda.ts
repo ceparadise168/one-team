@@ -1144,6 +1144,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     // --- Camping: Trips ---
+    /* eslint-disable @typescript-eslint/no-explicit-any -- camping route handlers cast unvalidated body */
     const campingTripsMatch = path.match(/^\/v1\/liff\/camping\/trips$/);
     if (campingTripsMatch) {
       if (method === 'POST') {
@@ -1295,6 +1296,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const summary = await campingSplitService.getPublicSummary(tripId);
       return jsonResponse(200, summary, responseOptions);
     }
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);
   } catch (error) {

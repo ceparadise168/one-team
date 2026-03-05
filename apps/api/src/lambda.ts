@@ -1025,8 +1025,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (massageSessionBookingsMatch && method === 'GET') {
       const sessionId = massageSessionBookingsMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const session = await massageBookingService.getSession(principal.tenantId, sessionId);
       const bookings = await massageBookingService.listSessionBookings(principal.tenantId, sessionId, principal.employeeId);
-      return jsonResponse(200, { bookings }, responseOptions);
+      return jsonResponse(200, { session, bookings }, responseOptions);
     }
 
     // My bookings

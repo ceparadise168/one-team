@@ -6,12 +6,13 @@ import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-bi
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, ValidationError, ConflictError } from '../errors.js';
 
+const TENANT = 'test-tenant';
+
 function createContext(nowStr = '2026-04-01T09:00:00.000Z') {
   const massageRepo = new InMemoryMassageBookingRepository();
   const employeeRepo = new InMemoryEmployeeBindingRepository();
   const lineClient = new StubLinePlatformClient();
   const service = new MassageBookingService(massageRepo, employeeRepo, lineClient, {
-    tenantId: 'test-tenant',
     now: () => new Date(nowStr),
   });
   return { service, massageRepo, employeeRepo, lineClient };
@@ -19,7 +20,7 @@ function createContext(nowStr = '2026-04-01T09:00:00.000Z') {
 
 async function seedAdmin(employeeRepo: InMemoryEmployeeBindingRepository) {
   await employeeRepo.upsert({
-    tenantId: 'test-tenant',
+    tenantId: TENANT,
     employeeId: 'ADMIN01',
     lineUserId: 'line-admin-01',
     boundAt: '2026-01-01T00:00:00.000Z',
@@ -31,7 +32,7 @@ async function seedAdmin(employeeRepo: InMemoryEmployeeBindingRepository) {
 
 async function seedEmployee(employeeRepo: InMemoryEmployeeBindingRepository, id = 'EMP01', lineUserId = 'line-emp-01') {
   await employeeRepo.upsert({
-    tenantId: 'test-tenant',
+    tenantId: TENANT,
     employeeId: id,
     lineUserId,
     boundAt: '2026-01-01T00:00:00.000Z',
@@ -39,6 +40,22 @@ async function seedEmployee(employeeRepo: InMemoryEmployeeBindingRepository, id 
     accessStatus: 'APPROVED',
     permissions: { canInvite: false, canRemove: false, canManageBooking: false },
   });
+}
+
+function sessionInput(overrides: Record<string, unknown> = {}) {
+  return {
+    tenantId: TENANT,
+    date: '2026-04-15',
+    startAt: '2026-04-15T10:00:00.000Z',
+    endAt: '2026-04-15T10:30:00.000Z',
+    location: '3F Massage Room',
+    quota: 1,
+    mode: 'FIRST_COME' as const,
+    openAt: '2026-04-14T00:00:00.000Z',
+    drawAt: null,
+    createdByEmployeeId: 'ADMIN01',
+    ...overrides,
+  };
 }
 
 describe('canManageBooking permission', () => {
@@ -57,20 +74,10 @@ describe('MassageBookingService — Session CRUD', () => {
     const { service, massageRepo, employeeRepo } = createContext();
     await seedAdmin(employeeRepo);
 
-    const result = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F Massage Room',
-      quota: 1,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const result = await service.createSession(sessionInput());
 
     assert.ok(result.sessionId);
-    const stored = await massageRepo.findSessionById('test-tenant', result.sessionId);
+    const stored = await massageRepo.findSessionById(TENANT, result.sessionId);
     assert.ok(stored);
     assert.equal(stored.mode, 'FIRST_COME');
     assert.equal(stored.status, 'ACTIVE');
@@ -81,19 +88,13 @@ describe('MassageBookingService — Session CRUD', () => {
     const { service, massageRepo, employeeRepo } = createContext();
     await seedAdmin(employeeRepo);
 
-    const result = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F Massage Room',
-      quota: 1,
+    const result = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    const stored = await massageRepo.findSessionById('test-tenant', result.sessionId);
+    const stored = await massageRepo.findSessionById(TENANT, result.sessionId);
     assert.ok(stored);
     assert.equal(stored.mode, 'LOTTERY');
     assert.equal(stored.drawAt, '2026-04-14T12:00:00.000Z');
@@ -104,17 +105,7 @@ describe('MassageBookingService — Session CRUD', () => {
     await seedEmployee(employeeRepo);
 
     await assert.rejects(
-      () => service.createSession({
-        date: '2026-04-15',
-        startAt: '2026-04-15T10:00:00.000Z',
-        endAt: '2026-04-15T10:30:00.000Z',
-        location: '3F',
-        quota: 1,
-        mode: 'FIRST_COME',
-        openAt: '2026-04-14T00:00:00.000Z',
-        drawAt: null,
-        createdByEmployeeId: 'EMP01',
-      }),
+      () => service.createSession(sessionInput({ createdByEmployeeId: 'EMP01' })),
       (err: unknown) => err instanceof ForbiddenError
     );
   });
@@ -123,30 +114,22 @@ describe('MassageBookingService — Session CRUD', () => {
     const { service, employeeRepo } = createContext();
     await seedAdmin(employeeRepo);
 
-    await service.createSession({
+    await service.createSession(sessionInput({
       date: '2026-04-10',
       startAt: '2026-04-10T10:00:00.000Z',
       endAt: '2026-04-10T10:30:00.000Z',
       location: '3F',
-      quota: 1,
-      mode: 'FIRST_COME',
       openAt: '2026-04-09T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
-    await service.createSession({
+    }));
+    await service.createSession(sessionInput({
       date: '2026-04-20',
       startAt: '2026-04-20T10:00:00.000Z',
       endAt: '2026-04-20T10:30:00.000Z',
       location: '3F',
-      quota: 1,
-      mode: 'FIRST_COME',
       openAt: '2026-04-19T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    const sessions = await service.listSessions({ fromDate: '2026-04-15' });
+    const sessions = await service.listSessions(TENANT, { fromDate: '2026-04-15' });
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].date, '2026-04-20');
   });
@@ -155,20 +138,10 @@ describe('MassageBookingService — Session CRUD', () => {
     const { service, massageRepo, employeeRepo } = createContext();
     await seedAdmin(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput());
 
-    await service.cancelSession(sessionId, 'ADMIN01', 'Room unavailable');
-    const stored = await massageRepo.findSessionById('test-tenant', sessionId);
+    await service.cancelSession(TENANT, sessionId, 'ADMIN01', 'Room unavailable');
+    const stored = await massageRepo.findSessionById(TENANT, sessionId);
     assert.equal(stored!.status, 'CANCELLED');
     assert.equal(stored!.cancellationNote, 'Room unavailable');
   });
@@ -180,22 +153,12 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    const result = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    const result = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     assert.ok(result.bookingId);
 
-    const booking = await massageRepo.findBooking('test-tenant', sessionId, 'EMP01');
+    const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
     assert.ok(booking);
     assert.equal(booking.status, 'CONFIRMED');
   });
@@ -205,20 +168,10 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
     await assert.rejects(
-      () => service.bookSession(sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
       (err: unknown) => err instanceof ValidationError
     );
   });
@@ -229,21 +182,11 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
     await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput());
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     await assert.rejects(
-      () => service.bookSession(sessionId, 'EMP02', 'line-emp-02'),
+      () => service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02'),
       (err: unknown) => err instanceof ConflictError
     );
   });
@@ -253,21 +196,11 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 5,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 5 }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     await assert.rejects(
-      () => service.bookSession(sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
       (err: unknown) => err instanceof ConflictError
     );
   });
@@ -279,20 +212,14 @@ describe('MassageBookingService — Mode B Lottery', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
+    const { sessionId } = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    const booking = await massageRepo.findBooking('test-tenant', sessionId, 'EMP01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
     assert.equal(booking!.status, 'REGISTERED');
   });
 
@@ -301,20 +228,14 @@ describe('MassageBookingService — Mode B Lottery', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
+    const { sessionId } = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
     await assert.rejects(
-      () => service.bookSession(sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
       (err: unknown) => err instanceof ValidationError
     );
   });
@@ -326,31 +247,25 @@ describe('MassageBookingService — Mode B Lottery', () => {
     await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
     await seedEmployee(employeeRepo, 'EMP03', 'line-emp-03');
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
+    const { sessionId } = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    await service.bookSession(sessionId, 'EMP02', 'line-emp-02');
-    await service.bookSession(sessionId, 'EMP03', 'line-emp-03');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02');
+    await service.bookSession(TENANT, sessionId, 'EMP03', 'line-emp-03');
 
-    await service.executeDraw(sessionId);
+    await service.executeDraw(TENANT, sessionId);
 
-    const bookings = await massageRepo.listBookingsBySession('test-tenant', sessionId);
+    const bookings = await massageRepo.listBookingsBySession(TENANT, sessionId);
     const confirmed = bookings.filter(b => b.status === 'CONFIRMED');
     const unsuccessful = bookings.filter(b => b.status === 'UNSUCCESSFUL');
     assert.equal(confirmed.length, 1);
     assert.equal(unsuccessful.length, 2);
 
-    const session = await massageRepo.findSessionById('test-tenant', sessionId);
+    const session = await massageRepo.findSessionById(TENANT, sessionId);
     assert.ok(session!.drawnAt);
   });
 
@@ -359,22 +274,16 @@ describe('MassageBookingService — Mode B Lottery', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
+    const { sessionId } = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    await service.executeDraw(sessionId);
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.executeDraw(TENANT, sessionId);
     await assert.rejects(
-      () => service.executeDraw(sessionId),
+      () => service.executeDraw(TENANT, sessionId),
       (err: unknown) => err instanceof ConflictError
     );
   });
@@ -386,22 +295,12 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    const { bookingId } = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    await service.cancelBooking(bookingId, 'EMP01', 'Changed my mind');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.cancelBooking(TENANT, bookingId, 'EMP01', 'Changed my mind');
 
-    const booking = await massageRepo.findBookingById('test-tenant', bookingId);
+    const booking = await massageRepo.findBookingById(TENANT, bookingId);
     assert.equal(booking!.status, 'CANCELLED');
     assert.equal(booking!.cancellationReason, 'Changed my mind');
   });
@@ -411,21 +310,11 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    const { bookingId } = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     await assert.rejects(
-      () => service.cancelBooking(bookingId, 'EMP01'),
+      () => service.cancelBooking(TENANT, bookingId, 'EMP01'),
       (err: unknown) => err instanceof ValidationError
     );
   });
@@ -435,22 +324,12 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    const { bookingId } = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    await service.adminCancelBooking(bookingId, 'ADMIN01', 'Schedule conflict');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.adminCancelBooking(TENANT, bookingId, 'ADMIN01', 'Schedule conflict');
 
-    const booking = await massageRepo.findBookingById('test-tenant', bookingId);
+    const booking = await massageRepo.findBookingById(TENANT, bookingId);
     assert.equal(booking!.status, 'CANCELLED');
   });
 });
@@ -461,19 +340,9 @@ describe('MassageBookingService — LINE Notifications', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     assert.equal(lineClient.pushedMessages.length, 1);
     assert.equal(lineClient.pushedMessages[0].lineUserId, 'line-emp-01');
     assert.ok(lineClient.pushedMessages[0].messages[0].text!.includes('成功預約'));
@@ -485,23 +354,17 @@ describe('MassageBookingService — LINE Notifications', () => {
     await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
     await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 1,
+    const { sessionId } = await service.createSession(sessionInput({
       mode: 'LOTTERY',
       openAt: '2026-04-10T00:00:00.000Z',
       drawAt: '2026-04-14T12:00:00.000Z',
-      createdByEmployeeId: 'ADMIN01',
-    });
+    }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    await service.bookSession(sessionId, 'EMP02', 'line-emp-02');
-    lineClient.pushedMessages.length = 0; // clear registration notifications
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02');
+    lineClient.pushedMessages.length = 0;
 
-    await service.executeDraw(sessionId);
+    await service.executeDraw(TENANT, sessionId);
     assert.equal(lineClient.pushedMessages.length, 2);
     const texts = lineClient.pushedMessages.map(m => m.messages[0].text!);
     assert.ok(texts.some(t => t.includes('恭喜')));
@@ -513,22 +376,12 @@ describe('MassageBookingService — LINE Notifications', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    const { bookingId } = await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
     lineClient.pushedMessages.length = 0;
 
-    await service.cancelBooking(bookingId, 'EMP01');
+    await service.cancelBooking(TENANT, bookingId, 'EMP01');
     assert.equal(lineClient.pushedMessages.length, 1);
     assert.ok(lineClient.pushedMessages[0].messages[0].text!.includes('已取消'));
   });
@@ -540,20 +393,10 @@ describe('MassageBookingService — My Bookings', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession({
-      date: '2026-04-15',
-      startAt: '2026-04-15T10:00:00.000Z',
-      endAt: '2026-04-15T10:30:00.000Z',
-      location: '3F',
-      quota: 2,
-      mode: 'FIRST_COME',
-      openAt: '2026-04-14T00:00:00.000Z',
-      drawAt: null,
-      createdByEmployeeId: 'ADMIN01',
-    });
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
 
-    await service.bookSession(sessionId, 'EMP01', 'line-emp-01');
-    const bookings = await service.listMyBookings('EMP01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const bookings = await service.listMyBookings(TENANT, 'EMP01');
     assert.equal(bookings.length, 1);
     assert.equal(bookings[0].sessionId, sessionId);
   });

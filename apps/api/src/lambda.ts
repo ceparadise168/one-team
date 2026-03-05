@@ -440,10 +440,7 @@ const massageBookingService = new MassageBookingService(
   massageBookingRepository,
   employeeBindingRepository,
   linePlatformClient,
-  {
-    tenantId: process.env.DEFAULT_TENANT_ID ?? 'default-tenant',
-    now: () => new Date(),
-  }
+  { now: () => new Date() }
 );
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
@@ -969,15 +966,16 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const massageSessionsMatch = path.match(/^\/v1\/massage\/sessions$/);
     if (massageSessionsMatch) {
       if (method === 'GET') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const fromDate = event.queryStringParameters?.fromDate;
-        const sessions = await massageBookingService.listSessions({ fromDate });
+        const sessions = await massageBookingService.listSessions(principal.tenantId, { fromDate });
         return jsonResponse(200, { sessions }, responseOptions);
       }
       if (method === 'POST') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
         const result = await massageBookingService.createSession({
+          tenantId: principal.tenantId,
           date: body.date as string,
           startAt: body.startAt as string,
           endAt: body.endAt as string,
@@ -997,8 +995,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (massageSessionMatch) {
       const sessionId = massageSessionMatch[1];
       if (method === 'GET') {
-        await requireEmployeePrincipal({ event, authSessionService });
-        const session = await massageBookingService.getSession(sessionId);
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const session = await massageBookingService.getSession(principal.tenantId, sessionId);
         return jsonResponse(200, session, responseOptions);
       }
     }
@@ -1009,7 +1007,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const sessionId = massageCancelSessionMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
       const body = parseBody(event) as Record<string, unknown>;
-      await massageBookingService.cancelSession(sessionId, principal.employeeId, body.note as string);
+      await massageBookingService.cancelSession(principal.tenantId, sessionId, principal.employeeId, body.note as string);
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
@@ -1018,7 +1016,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (massageBookMatch && method === 'POST') {
       const sessionId = massageBookMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const result = await massageBookingService.bookSession(sessionId, principal.employeeId, principal.lineUserId);
+      const result = await massageBookingService.bookSession(principal.tenantId, sessionId, principal.employeeId, principal.lineUserId);
       return jsonResponse(201, result, responseOptions);
     }
 
@@ -1027,7 +1025,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (massageSessionBookingsMatch && method === 'GET') {
       const sessionId = massageSessionBookingsMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const bookings = await massageBookingService.listSessionBookings(sessionId, principal.employeeId);
+      const bookings = await massageBookingService.listSessionBookings(principal.tenantId, sessionId, principal.employeeId);
       return jsonResponse(200, { bookings }, responseOptions);
     }
 
@@ -1035,7 +1033,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const massageMyBookingsMatch = path.match(/^\/v1\/massage\/my-bookings$/);
     if (massageMyBookingsMatch && method === 'GET') {
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const bookings = await massageBookingService.listMyBookings(principal.employeeId);
+      const bookings = await massageBookingService.listMyBookings(principal.tenantId, principal.employeeId);
       return jsonResponse(200, { bookings }, responseOptions);
     }
 
@@ -1045,7 +1043,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const bookingId = massageCancelBookingMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
       const body = parseBody(event) as Record<string, unknown>;
-      await massageBookingService.cancelBooking(bookingId, principal.employeeId, body.reason as string);
+      await massageBookingService.cancelBooking(principal.tenantId, bookingId, principal.employeeId, body.reason as string);
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
@@ -1055,7 +1053,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const bookingId = massageAdminCancelMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
       const body = parseBody(event) as Record<string, unknown>;
-      await massageBookingService.adminCancelBooking(bookingId, principal.employeeId, body.reason as string);
+      await massageBookingService.adminCancelBooking(principal.tenantId, bookingId, principal.employeeId, body.reason as string);
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
@@ -1063,8 +1061,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const massageDrawMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/draw$/);
     if (massageDrawMatch && method === 'POST') {
       const sessionId = massageDrawMatch[1];
-      await requireEmployeePrincipal({ event, authSessionService });
-      await massageBookingService.executeDraw(sessionId);
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      await massageBookingService.executeDraw(principal.tenantId, sessionId);
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 

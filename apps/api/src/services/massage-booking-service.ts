@@ -6,15 +6,11 @@ import type { LinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, NotFoundError, ValidationError, ConflictError } from '../errors.js';
 
 interface MassageBookingServiceOptions {
-  tenantId: string;
   now: () => Date;
-  // Future: add schedulerClient for automatic EventBridge-triggered draws
-  // schedulerClient?: SchedulerClient;
-  // drawLambdaArn?: string;
-  // schedulerRoleArn?: string;
 }
 
 interface CreateSessionInput {
+  tenantId: string;
   date: string;
   startAt: string;
   endAt: string;
@@ -35,7 +31,7 @@ export class MassageBookingService {
   ) {}
 
   async createSession(input: CreateSessionInput): Promise<{ sessionId: string }> {
-    await this.requireManageBookingPermission(input.createdByEmployeeId);
+    await this.requireManageBookingPermission(input.tenantId, input.createdByEmployeeId);
 
     if (input.mode === 'LOTTERY' && !input.drawAt) {
       throw new ValidationError('drawAt is required for LOTTERY mode');
@@ -43,7 +39,7 @@ export class MassageBookingService {
 
     const sessionId = randomUUID().slice(0, 8);
     const session: MassageSessionRecord = {
-      tenantId: this.options.tenantId,
+      tenantId: input.tenantId,
       sessionId,
       date: input.date,
       startAt: input.startAt,
@@ -66,19 +62,19 @@ export class MassageBookingService {
     return { sessionId };
   }
 
-  async listSessions(input: { fromDate?: string } = {}): Promise<MassageSessionRecord[]> {
-    return this.massageRepo.listActiveSessions(this.options.tenantId, input.fromDate);
+  async listSessions(tenantId: string, input: { fromDate?: string } = {}): Promise<MassageSessionRecord[]> {
+    return this.massageRepo.listActiveSessions(tenantId, input.fromDate);
   }
 
-  async getSession(sessionId: string): Promise<MassageSessionRecord> {
-    const session = await this.massageRepo.findSessionById(this.options.tenantId, sessionId);
+  async getSession(tenantId: string, sessionId: string): Promise<MassageSessionRecord> {
+    const session = await this.massageRepo.findSessionById(tenantId, sessionId);
     if (!session) throw new NotFoundError('Session not found');
     return session;
   }
 
-  async cancelSession(sessionId: string, cancelledBy: string, note?: string): Promise<void> {
-    await this.requireManageBookingPermission(cancelledBy);
-    const session = await this.getSession(sessionId);
+  async cancelSession(tenantId: string, sessionId: string, cancelledBy: string, note?: string): Promise<void> {
+    await this.requireManageBookingPermission(tenantId, cancelledBy);
+    const session = await this.getSession(tenantId, sessionId);
     if (session.status !== 'ACTIVE') throw new ValidationError('Session is not active');
 
     session.status = 'CANCELLED';
@@ -88,8 +84,8 @@ export class MassageBookingService {
     await this.massageRepo.updateSession(session);
   }
 
-  async bookSession(sessionId: string, employeeId: string, lineUserId: string): Promise<{ bookingId: string }> {
-    const session = await this.getSession(sessionId);
+  async bookSession(tenantId: string, sessionId: string, employeeId: string, lineUserId: string): Promise<{ bookingId: string }> {
+    const session = await this.getSession(tenantId, sessionId);
     if (session.status !== 'ACTIVE') throw new ValidationError('Session is not active');
 
     const now = this.options.now();
@@ -103,11 +99,11 @@ export class MassageBookingService {
     }
 
     // Check duplicate
-    const existing = await this.massageRepo.findBooking(this.options.tenantId, sessionId, employeeId);
+    const existing = await this.massageRepo.findBooking(tenantId, sessionId, employeeId);
     if (existing && existing.status !== 'CANCELLED') throw new ConflictError('Already booked this session');
 
     if (session.mode === 'FIRST_COME') {
-      const confirmedCount = await this.massageRepo.countConfirmedBookings(this.options.tenantId, sessionId);
+      const confirmedCount = await this.massageRepo.countConfirmedBookings(tenantId, sessionId);
       if (confirmedCount >= session.quota) throw new ConflictError('Session is full');
     }
 
@@ -115,7 +111,7 @@ export class MassageBookingService {
     const status = session.mode === 'FIRST_COME' ? 'CONFIRMED' : 'REGISTERED';
 
     const booking: MassageBookingRecord = {
-      tenantId: this.options.tenantId,
+      tenantId,
       bookingId,
       sessionId,
       employeeId,
@@ -129,20 +125,20 @@ export class MassageBookingService {
     await this.massageRepo.createBooking(booking);
 
     if (status === 'CONFIRMED') {
-      await this.notify(lineUserId, this.formatConfirmedMessage(session));
+      await this.notify(tenantId, lineUserId, this.formatConfirmedMessage(session));
     } else {
-      await this.notify(lineUserId, this.formatRegisteredMessage(session));
+      await this.notify(tenantId, lineUserId, this.formatRegisteredMessage(session));
     }
 
     return { bookingId };
   }
 
-  async executeDraw(sessionId: string): Promise<void> {
-    const session = await this.getSession(sessionId);
+  async executeDraw(tenantId: string, sessionId: string): Promise<void> {
+    const session = await this.getSession(tenantId, sessionId);
     if (session.mode !== 'LOTTERY') throw new ValidationError('Session is not LOTTERY mode');
     if (session.drawnAt) throw new ConflictError('Draw already executed');
 
-    const bookings = await this.massageRepo.listBookingsBySession(this.options.tenantId, sessionId);
+    const bookings = await this.massageRepo.listBookingsBySession(tenantId, sessionId);
     const registered = bookings.filter(b => b.status === 'REGISTERED');
 
     // Fisher-Yates shuffle
@@ -170,17 +166,17 @@ export class MassageBookingService {
       const msg = booking.status === 'CONFIRMED'
         ? `🎉 恭喜！你已中籤 ${session.date} 的按摩（${session.location}）`
         : `😢 很遺憾，${session.date} 的按摩未中籤`;
-      await this.notify(booking.lineUserId, msg);
+      await this.notify(tenantId, booking.lineUserId, msg);
     }
   }
 
-  async cancelBooking(bookingId: string, employeeId: string, reason?: string): Promise<void> {
-    const booking = await this.massageRepo.findBookingById(this.options.tenantId, bookingId);
+  async cancelBooking(tenantId: string, bookingId: string, employeeId: string, reason?: string): Promise<void> {
+    const booking = await this.massageRepo.findBookingById(tenantId, bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
     if (booking.employeeId !== employeeId) throw new ForbiddenError('Not your booking');
     if (booking.status === 'CANCELLED') throw new ValidationError('Booking already cancelled');
 
-    const session = await this.getSession(booking.sessionId);
+    const session = await this.getSession(tenantId, booking.sessionId);
     const now = this.options.now();
     const twoHoursBefore = new Date(new Date(session.startAt).getTime() - 2 * 60 * 60 * 1000);
     if (now >= twoHoursBefore) throw new ValidationError('Cannot cancel within 2 hours of session start');
@@ -191,12 +187,12 @@ export class MassageBookingService {
     booking.cancellationReason = reason ?? null;
     await this.massageRepo.updateBooking(booking);
 
-    await this.notify(booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已取消`);
+    await this.notify(tenantId, booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已取消`);
   }
 
-  async adminCancelBooking(bookingId: string, adminEmployeeId: string, reason?: string): Promise<void> {
-    await this.requireManageBookingPermission(adminEmployeeId);
-    const booking = await this.massageRepo.findBookingById(this.options.tenantId, bookingId);
+  async adminCancelBooking(tenantId: string, bookingId: string, adminEmployeeId: string, reason?: string): Promise<void> {
+    await this.requireManageBookingPermission(tenantId, adminEmployeeId);
+    const booking = await this.massageRepo.findBookingById(tenantId, bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
     if (booking.status === 'CANCELLED') throw new ValidationError('Booking already cancelled');
 
@@ -206,17 +202,17 @@ export class MassageBookingService {
     booking.cancellationReason = reason ?? null;
     await this.massageRepo.updateBooking(booking);
 
-    const session = await this.getSession(booking.sessionId);
-    await this.notify(booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已被管理員取消`);
+    const session = await this.getSession(tenantId, booking.sessionId);
+    await this.notify(tenantId, booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已被管理員取消`);
   }
 
-  async listMyBookings(employeeId: string): Promise<MassageBookingRecord[]> {
-    return this.massageRepo.listBookingsByEmployee(this.options.tenantId, employeeId);
+  async listMyBookings(tenantId: string, employeeId: string): Promise<MassageBookingRecord[]> {
+    return this.massageRepo.listBookingsByEmployee(tenantId, employeeId);
   }
 
-  async listSessionBookings(sessionId: string, requestedBy: string): Promise<MassageBookingRecord[]> {
-    await this.requireManageBookingPermission(requestedBy);
-    return this.massageRepo.listBookingsBySession(this.options.tenantId, sessionId);
+  async listSessionBookings(tenantId: string, sessionId: string, requestedBy: string): Promise<MassageBookingRecord[]> {
+    await this.requireManageBookingPermission(tenantId, requestedBy);
+    return this.massageRepo.listBookingsBySession(tenantId, sessionId);
   }
 
   private formatConfirmedMessage(session: MassageSessionRecord): string {
@@ -228,10 +224,10 @@ export class MassageBookingService {
     return `📝 已登記 ${session.date} 的按摩抽籤，結果將於抽籤後通知`;
   }
 
-  private async notify(lineUserId: string, text: string): Promise<void> {
+  private async notify(tenantId: string, lineUserId: string, text: string): Promise<void> {
     try {
       await this.lineClient.pushMessage({
-        tenantId: this.options.tenantId,
+        tenantId,
         lineUserId,
         messages: [{ type: 'text', text }],
       });
@@ -240,8 +236,8 @@ export class MassageBookingService {
     }
   }
 
-  private async requireManageBookingPermission(employeeId: string): Promise<void> {
-    const bindings = await this.employeeRepo.listByTenant(this.options.tenantId);
+  private async requireManageBookingPermission(tenantId: string, employeeId: string): Promise<void> {
+    const bindings = await this.employeeRepo.listByTenant(tenantId);
     const binding = bindings.find(
       b => b.employeeId === employeeId && b.employmentStatus === 'ACTIVE'
     );

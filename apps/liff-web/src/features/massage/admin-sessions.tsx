@@ -31,9 +31,14 @@ export function AdminSessions() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>場次管理</h1>
-        <Link to="/massage/admin/create" style={styles.createBtn}>
-          新增場次
-        </Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={styles.scheduleBtn} onClick={() => navigate('/massage/admin/schedules')}>
+            排程管理
+          </button>
+          <Link to="/massage/admin/create" style={styles.createBtn}>
+            新增場次
+          </Link>
+        </div>
       </div>
 
       {actionMessage && <p style={styles.message}>{actionMessage}</p>}
@@ -105,6 +110,16 @@ const styles: Record<string, React.CSSProperties> = {
     textDecoration: 'none',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  scheduleBtn: {
+    padding: '8px 16px',
+    backgroundColor: '#fff',
+    color: '#1DB446',
+    border: '1px solid #1DB446',
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 'bold',
+    cursor: 'pointer',
   },
   message: { textAlign: 'center', color: '#1a73e8', marginTop: 8, marginBottom: 8, fontSize: 14 },
   empty: { color: '#999', textAlign: 'center', marginTop: 40 },

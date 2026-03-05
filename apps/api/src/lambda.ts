@@ -1095,6 +1095,46 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
+    // --- Schedule Routes ---
+
+    // List schedules / Create schedule
+    const massageSchedulesMatch = path.match(/^\/v1\/massage\/schedules$/);
+    if (massageSchedulesMatch) {
+      if (method === 'GET') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const schedules = await massageBookingService.listSchedules(principal.tenantId, principal.employeeId);
+        return jsonResponse(200, { schedules }, responseOptions);
+      }
+      if (method === 'POST') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await massageBookingService.createSchedule({
+          tenantId: principal.tenantId,
+          dayOfWeek: body.dayOfWeek as number,
+          startTime: body.startTime as string,
+          endTime: body.endTime as string,
+          location: body.location as string,
+          slotDurationMinutes: (body.slotDurationMinutes as number) ?? undefined,
+          therapistCount: (body.therapistCount as number) ?? undefined,
+          mode: body.mode as 'FIRST_COME' | 'LOTTERY',
+          drawMode: (body.drawMode as 'AUTO' | 'MANUAL') ?? undefined,
+          drawLeadMinutes: (body.drawLeadMinutes as number) ?? undefined,
+          openLeadDays: (body.openLeadDays as number) ?? undefined,
+          createdByEmployeeId: principal.employeeId,
+        });
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    // Toggle schedule
+    const massageScheduleToggleMatch = path.match(/^\/v1\/massage\/schedules\/([^/]+)\/toggle$/);
+    if (massageScheduleToggleMatch && method === 'POST') {
+      const scheduleId = massageScheduleToggleMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const result = await massageBookingService.toggleSchedule(principal.tenantId, scheduleId, principal.employeeId);
+      return jsonResponse(200, result, responseOptions);
+    }
+
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);
   } catch (error) {
     if (error instanceof z.ZodError) {

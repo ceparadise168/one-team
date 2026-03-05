@@ -341,6 +341,105 @@ export function useAdminCancelBooking(apiBaseUrl: string, accessToken: string) {
   return { cancel, loading, error };
 }
 
+export interface MassageSchedule {
+  tenantId: string;
+  scheduleId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  location: string;
+  slotDurationMinutes: number;
+  therapistCount: number;
+  mode: 'FIRST_COME' | 'LOTTERY';
+  drawMode: 'AUTO' | 'MANUAL';
+  drawLeadMinutes: number;
+  openLeadDays: number;
+  timezone: string;
+  status: 'ACTIVE' | 'PAUSED';
+  createdByEmployeeId: string;
+  createdAt: string;
+}
+
+export function useMassageSchedules(apiBaseUrl: string, accessToken: string) {
+  const [schedules, setSchedules] = useState<MassageSchedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    fetch(`${apiBaseUrl}/v1/massage/schedules`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
+      .then(data => { setSchedules(data.schedules ?? []); setError(null); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [apiBaseUrl, accessToken]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { schedules, loading, error, refresh };
+}
+
+export function useCreateMassageSchedule(apiBaseUrl: string, accessToken: string) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = useCallback(async (body: {
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    location: string;
+    slotDurationMinutes?: number;
+    therapistCount?: number;
+    mode: 'FIRST_COME' | 'LOTTERY';
+    drawMode?: 'AUTO' | 'MANUAL';
+    drawLeadMinutes?: number;
+    openLeadDays?: number;
+  }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBaseUrl}/v1/massage/schedules`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '建立失敗');
+      }
+      return await res.json();
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, accessToken]);
+
+  return { create, loading, error };
+}
+
+export function useToggleMassageSchedule(apiBaseUrl: string, accessToken: string) {
+  const [loading, setLoading] = useState(false);
+
+  const toggle = useCallback(async (scheduleId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBaseUrl}/v1/massage/schedules/${scheduleId}/toggle`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error('操作失敗');
+      return await res.json();
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, accessToken]);
+
+  return { toggle, loading };
+}
+
 export function useExecuteDraw(apiBaseUrl: string, accessToken: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

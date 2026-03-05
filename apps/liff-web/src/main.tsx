@@ -14,6 +14,7 @@ import { SessionList } from './features/massage/session-list';
 import { AdminSessions } from './features/massage/admin-sessions';
 import { CreateSession } from './features/massage/create-session';
 import { SessionBookings } from './features/massage/session-bookings';
+import { ScheduleManagement } from './features/massage/schedule-management';
 import { AuthGuard } from './auth-guard';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
@@ -45,6 +46,7 @@ function App() {
           <Route path="/massage/admin" element={<AuthGuard><AdminSessions /></AuthGuard>} />
           <Route path="/massage/admin/create" element={<AuthGuard><CreateSession /></AuthGuard>} />
           <Route path="/massage/admin/sessions/:sessionId" element={<AuthGuard><SessionBookings /></AuthGuard>} />
+          <Route path="/massage/admin/schedules" element={<AuthGuard><ScheduleManagement /></AuthGuard>} />
           <Route
             path="/"
             element={

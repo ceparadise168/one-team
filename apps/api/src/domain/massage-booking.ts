@@ -1,4 +1,5 @@
 export type MassageSessionMode = 'FIRST_COME' | 'LOTTERY';
+export type MassageDrawMode = 'AUTO' | 'MANUAL';
 export type MassageSessionStatus = 'ACTIVE' | 'CANCELLED';
 export type MassageBookingStatus = 'REGISTERED' | 'CONFIRMED' | 'UNSUCCESSFUL' | 'CANCELLED';
 
@@ -13,6 +14,7 @@ export interface MassageSessionRecord {
   mode: MassageSessionMode;
   openAt: string;
   drawAt: string | null;
+  drawMode: MassageDrawMode;
   drawnAt: string | null;
   status: MassageSessionStatus;
   cancelledAt: string | null;

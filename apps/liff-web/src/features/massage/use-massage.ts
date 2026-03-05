@@ -11,6 +11,7 @@ export interface MassageSession {
   mode: 'FIRST_COME' | 'LOTTERY';
   openAt: string;
   drawAt: string | null;
+  drawMode: 'AUTO' | 'MANUAL';
   drawnAt: string | null;
   status: 'ACTIVE' | 'CANCELLED';
   createdByEmployeeId: string;

@@ -19,6 +19,8 @@ import {
   aws_sqs as sqs,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
+  aws_events as events,
+  aws_events_targets as targets,
   aws_wafv2 as wafv2
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -303,6 +305,41 @@ export class PlatformStack extends Stack {
         ]
       })
     );
+
+    // --- Massage Draw Scheduler ---
+    const massageDrawWorker = new lambdaNodejs.NodejsFunction(this, 'MassageDrawWorker', {
+      functionName: `${prefix}-massage-draw-worker`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: fileURLToPath(new URL('../../../../apps/api/src/workers/massage-draw-worker.ts', import.meta.url)),
+      handler: 'handler',
+      timeout: Duration.seconds(60),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        USE_DYNAMODB_REPOSITORIES: 'true',
+        USE_AWS_SECRETS_MANAGER: 'true',
+        LINE_INTEGRATION_MODE: 'real',
+        LINE_SECRET_PREFIX: lineSecretPrefix,
+        MASSAGE_TABLE_NAME: `${prefix}-employees`,
+        EMPLOYEES_TABLE_NAME: `${prefix}-employees`,
+      }
+    });
+
+    employeesTable.grantReadWriteData(massageDrawWorker);
+    massageDrawWorker.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${lineSecretPrefix}/*`
+        ]
+      })
+    );
+
+    new events.Rule(this, 'MassageDrawSchedule', {
+      ruleName: `${prefix}-massage-draw-schedule`,
+      schedule: events.Schedule.rate(Duration.minutes(1)),
+      targets: [new targets.LambdaFunction(massageDrawWorker)],
+    });
 
     const lineCredentialsSecret = new secretsmanager.Secret(this, 'LineCredentialsSecret', {
       secretName: `${prefix}/line/credentials`,

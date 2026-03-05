@@ -984,6 +984,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           mode: body.mode as 'FIRST_COME' | 'LOTTERY',
           openAt: body.openAt as string,
           drawAt: (body.drawAt as string) ?? null,
+          drawMode: (body.drawMode as 'AUTO' | 'MANUAL') ?? undefined,
           createdByEmployeeId: principal.employeeId,
         });
         return jsonResponse(201, result, responseOptions);

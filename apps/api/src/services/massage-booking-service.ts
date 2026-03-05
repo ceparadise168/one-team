@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MassageSessionRecord, MassageSessionMode, MassageBookingRecord } from '../domain/massage-booking.js';
+import type { MassageSessionRecord, MassageSessionMode, MassageDrawMode, MassageBookingRecord } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from '../repositories/massage-booking-repository.js';
 import type { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import type { LinePlatformClient } from '../line/line-platform-client.js';
@@ -19,6 +19,7 @@ interface CreateSessionInput {
   mode: MassageSessionMode;
   openAt: string;
   drawAt: string | null;
+  drawMode?: MassageDrawMode;
   createdByEmployeeId: string;
 }
 
@@ -49,6 +50,7 @@ export class MassageBookingService {
       mode: input.mode,
       openAt: input.openAt,
       drawAt: input.drawAt,
+      drawMode: input.drawMode ?? 'AUTO',
       drawnAt: null,
       status: 'ACTIVE',
       cancelledAt: null,

@@ -97,6 +97,8 @@ export function SessionBookings() {
               {session.mode === 'LOTTERY' && session.drawAt && (
                 <p style={styles.cardMeta}>
                   抽籤時間: {formatDateTime(session.drawAt)}
+                  {' · '}
+                  {(session.drawMode ?? 'AUTO') === 'AUTO' ? '自動抽籤' : '手動抽籤'}
                   {session.drawnAt && ` (已於 ${formatDateTime(session.drawnAt)} 執行)`}
                 </p>
               )}

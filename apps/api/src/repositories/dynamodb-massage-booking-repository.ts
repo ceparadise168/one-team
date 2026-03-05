@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { MassageSessionRecord, MassageBookingRecord } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from './massage-booking-repository.js';
 
@@ -65,6 +65,21 @@ export class DynamoDbMassageBookingRepository implements MassageBookingRepositor
         ':prefix': 'MASSAGE_SESSION#',
         ':active': 'ACTIVE',
         ...(fromDate ? { ':fromDate': fromDate } : {}),
+      },
+    }));
+    return (result.Items ?? []).map(item => stripMetadata<MassageSessionRecord>(item as Record<string, unknown>)!);
+  }
+
+  async listSessionsDueForDraw(now: string): Promise<MassageSessionRecord[]> {
+    const result = await this.client.send(new ScanCommand({
+      TableName: this.tableName,
+      FilterExpression: 'entityType = :et AND #m = :lottery AND #s = :active AND drawAt <= :now AND attribute_not_exists(drawnAt)',
+      ExpressionAttributeNames: { '#m': 'mode', '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':et': 'MASSAGE_SESSION',
+        ':lottery': 'LOTTERY',
+        ':active': 'ACTIVE',
+        ':now': now,
       },
     }));
     return (result.Items ?? []).map(item => stripMetadata<MassageSessionRecord>(item as Record<string, unknown>)!);

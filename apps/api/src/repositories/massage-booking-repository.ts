@@ -6,6 +6,7 @@ export interface MassageBookingRepository {
   findSessionById(tenantId: string, sessionId: string): Promise<MassageSessionRecord | null>;
   updateSession(session: MassageSessionRecord): Promise<void>;
   listActiveSessions(tenantId: string, fromDate?: string): Promise<MassageSessionRecord[]>;
+  listSessionsDueForDraw(now: string): Promise<MassageSessionRecord[]>;
 
   // Bookings
   createBooking(booking: MassageBookingRecord): Promise<void>;
@@ -39,6 +40,16 @@ export class InMemoryMassageBookingRepository implements MassageBookingRepositor
       s.tenantId === tenantId &&
       s.status === 'ACTIVE' &&
       (!fromDate || s.date >= fromDate)
+    );
+  }
+
+  async listSessionsDueForDraw(now: string): Promise<MassageSessionRecord[]> {
+    return this.sessions.filter(s =>
+      s.mode === 'LOTTERY' &&
+      s.status === 'ACTIVE' &&
+      s.drawAt !== null &&
+      s.drawAt <= now &&
+      !s.drawnAt
     );
   }
 

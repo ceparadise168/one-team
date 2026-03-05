@@ -4,6 +4,7 @@ import { useAuth } from '../../auth-context';
 import { useCreateMassageSession } from './use-massage';
 
 type Mode = 'FIRST_COME' | 'LOTTERY';
+type DrawMode = 'AUTO' | 'MANUAL';
 
 export function CreateSession() {
   const { apiBaseUrl, accessToken } = useAuth();
@@ -16,6 +17,7 @@ export function CreateSession() {
   const [location, setLocation] = useState('');
   const [quota, setQuota] = useState('');
   const [mode, setMode] = useState<Mode>('FIRST_COME');
+  const [drawMode, setDrawMode] = useState<DrawMode>('AUTO');
   const [openAt, setOpenAt] = useState('');
   const [drawAt, setDrawAt] = useState('');
 
@@ -31,6 +33,7 @@ export function CreateSession() {
         mode: Mode;
         openAt: string;
         drawAt?: string;
+        drawMode?: DrawMode;
       } = {
         date,
         startAt: `${date}T${startAt}`,
@@ -42,6 +45,7 @@ export function CreateSession() {
       };
       if (mode === 'LOTTERY' && drawAt) {
         body.drawAt = new Date(drawAt).toISOString();
+        body.drawMode = drawMode;
       }
       await create(body);
       navigate('/massage/admin');
@@ -151,16 +155,41 @@ export function CreateSession() {
         </label>
 
         {mode === 'LOTTERY' && (
-          <label style={styles.label}>
-            抽籤時間
-            <input
-              type="datetime-local"
-              value={drawAt}
-              onChange={(e) => setDrawAt(e.target.value)}
-              required
-              style={styles.input}
-            />
-          </label>
+          <>
+            <label style={styles.label}>
+              抽籤時間
+              <input
+                type="datetime-local"
+                value={drawAt}
+                onChange={(e) => setDrawAt(e.target.value)}
+                required
+                style={styles.input}
+              />
+            </label>
+            <fieldset style={styles.fieldset}>
+              <legend style={styles.legend}>抽籤方式</legend>
+              <label style={styles.radioLabel}>
+                <input
+                  type="radio"
+                  name="drawMode"
+                  value="AUTO"
+                  checked={drawMode === 'AUTO'}
+                  onChange={() => setDrawMode('AUTO')}
+                />
+                自動抽籤
+              </label>
+              <label style={styles.radioLabel}>
+                <input
+                  type="radio"
+                  name="drawMode"
+                  value="MANUAL"
+                  checked={drawMode === 'MANUAL'}
+                  onChange={() => setDrawMode('MANUAL')}
+                />
+                手動抽籤（系統提醒）
+              </label>
+            </fieldset>
+          </>
         )}
 
         <button type="submit" style={styles.submitBtn} disabled={loading}>

@@ -1,5 +1,5 @@
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import type { MassageSessionRecord, MassageBookingRecord } from '../domain/massage-booking.js';
+import type { MassageSessionRecord, MassageBookingRecord, MassageScheduleRecord } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from './massage-booking-repository.js';
 
 function stripMetadata<T>(item: Record<string, unknown> | undefined): T | null {
@@ -236,5 +236,51 @@ export class DynamoDbMassageBookingRepository implements MassageBookingRepositor
     return (result.Items ?? [])
       .map(item => stripMetadata<MassageBookingRecord>(item as Record<string, unknown>)!)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  // --- Schedules ---
+
+  async createSchedule(schedule: MassageScheduleRecord): Promise<void> {
+    await this.client.send(new PutCommand({
+      TableName: this.tableName,
+      Item: {
+        pk: `TENANT#${schedule.tenantId}`,
+        sk: `MASSAGE_SCHEDULE#${schedule.scheduleId}`,
+        entityType: 'MASSAGE_SCHEDULE',
+        ...schedule,
+      },
+    }));
+  }
+
+  async findScheduleById(tenantId: string, scheduleId: string): Promise<MassageScheduleRecord | null> {
+    const result = await this.client.send(new GetCommand({
+      TableName: this.tableName,
+      Key: { pk: `TENANT#${tenantId}`, sk: `MASSAGE_SCHEDULE#${scheduleId}` },
+    }));
+    return stripMetadata<MassageScheduleRecord>(result.Item as Record<string, unknown> | undefined);
+  }
+
+  async updateSchedule(schedule: MassageScheduleRecord): Promise<void> {
+    await this.client.send(new PutCommand({
+      TableName: this.tableName,
+      Item: {
+        pk: `TENANT#${schedule.tenantId}`,
+        sk: `MASSAGE_SCHEDULE#${schedule.scheduleId}`,
+        entityType: 'MASSAGE_SCHEDULE',
+        ...schedule,
+      },
+    }));
+  }
+
+  async listSchedules(tenantId: string): Promise<MassageScheduleRecord[]> {
+    const result = await this.client.send(new QueryCommand({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': `TENANT#${tenantId}`,
+        ':prefix': 'MASSAGE_SCHEDULE#',
+      },
+    }));
+    return (result.Items ?? []).map(item => stripMetadata<MassageScheduleRecord>(item as Record<string, unknown>)!);
   }
 }

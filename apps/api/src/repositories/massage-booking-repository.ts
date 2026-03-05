@@ -1,4 +1,4 @@
-import type { MassageSessionRecord, MassageBookingRecord } from '../domain/massage-booking.js';
+import type { MassageSessionRecord, MassageBookingRecord, MassageScheduleRecord } from '../domain/massage-booking.js';
 
 export interface MassageBookingRepository {
   // Sessions
@@ -18,11 +18,18 @@ export interface MassageBookingRepository {
   countConfirmedBookings(tenantId: string, sessionId: string): Promise<number>;
   countConfirmedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<number>;
   listWaitlistedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<MassageBookingRecord[]>;
+
+  // Schedules
+  createSchedule(schedule: MassageScheduleRecord): Promise<void>;
+  findScheduleById(tenantId: string, scheduleId: string): Promise<MassageScheduleRecord | null>;
+  updateSchedule(schedule: MassageScheduleRecord): Promise<void>;
+  listSchedules(tenantId: string): Promise<MassageScheduleRecord[]>;
 }
 
 export class InMemoryMassageBookingRepository implements MassageBookingRepository {
   private sessions: MassageSessionRecord[] = [];
   private bookings: MassageBookingRecord[] = [];
+  private schedules: MassageScheduleRecord[] = [];
 
   async createSession(session: MassageSessionRecord): Promise<void> {
     this.sessions.push({ ...session });
@@ -104,5 +111,22 @@ export class InMemoryMassageBookingRepository implements MassageBookingRepositor
       .filter(b => b.tenantId === tenantId && b.sessionId === sessionId
         && b.slotStartAt === slotStartAt && b.status === 'WAITLISTED')
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async createSchedule(schedule: MassageScheduleRecord): Promise<void> {
+    this.schedules.push({ ...schedule });
+  }
+
+  async findScheduleById(tenantId: string, scheduleId: string): Promise<MassageScheduleRecord | null> {
+    return this.schedules.find(s => s.tenantId === tenantId && s.scheduleId === scheduleId) ?? null;
+  }
+
+  async updateSchedule(schedule: MassageScheduleRecord): Promise<void> {
+    const idx = this.schedules.findIndex(s => s.tenantId === schedule.tenantId && s.scheduleId === schedule.scheduleId);
+    if (idx >= 0) this.schedules[idx] = { ...schedule };
+  }
+
+  async listSchedules(tenantId: string): Promise<MassageScheduleRecord[]> {
+    return this.schedules.filter(s => s.tenantId === tenantId);
   }
 }

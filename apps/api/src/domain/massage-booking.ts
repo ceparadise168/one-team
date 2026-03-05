@@ -55,3 +55,24 @@ export function getSessionTotalCapacity(session: MassageSessionRecord): number {
   const slots = generateSlots(session);
   return slots.length * (session.therapistCount ?? 1);
 }
+
+export type MassageScheduleStatus = 'ACTIVE' | 'PAUSED';
+
+export interface MassageScheduleRecord {
+  tenantId: string;
+  scheduleId: string;
+  dayOfWeek: number;        // 0=Sun, 1=Mon, ..., 6=Sat
+  startTime: string;        // "12:00" (local time HH:mm)
+  endTime: string;          // "15:00"
+  location: string;
+  slotDurationMinutes: number;
+  therapistCount: number;
+  mode: MassageSessionMode;
+  drawMode: MassageDrawMode;
+  drawLeadMinutes: number;  // how many minutes before session to draw (for LOTTERY)
+  openLeadDays: number;     // how many days before to open booking (e.g., 7)
+  timezone: string;         // e.g., "Asia/Taipei"
+  status: MassageScheduleStatus;
+  createdByEmployeeId: string;
+  createdAt: string;
+}

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import { useCreateMassageSession } from './use-massage';
+import { sharedStyles } from './massage-shared';
 
 type Mode = 'FIRST_COME' | 'LOTTERY';
 type DrawMode = 'AUTO' | 'MANUAL';
@@ -51,8 +52,8 @@ export function CreateSession() {
         drawMode?: DrawMode;
       } = {
         date,
-        startAt: `${date}T${startAt}`,
-        endAt: `${date}T${endAt}`,
+        startAt: new Date(`${date}T${startAt}`).toISOString(),
+        endAt: new Date(`${date}T${endAt}`).toISOString(),
         location,
         slotDurationMinutes: parseInt(slotDurationMinutes, 10),
         therapistCount: parseInt(therapistCount, 10),
@@ -64,7 +65,7 @@ export function CreateSession() {
         body.drawMode = drawMode;
       }
       await create(body);
-      navigate('/massage/admin');
+      navigate('/massage');
     } catch {
       // error is set in the hook
     }
@@ -72,7 +73,10 @@ export function CreateSession() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>新增按摩場次</h1>
+      <div style={styles.header}>
+        <button style={sharedStyles.backBtn} onClick={() => navigate('/massage/admin')}>← 返回管理</button>
+        <h1 style={styles.title}>新增按摩場次</h1>
+      </div>
 
       {error && <p style={styles.error}>{error}</p>}
 
@@ -237,7 +241,8 @@ export function CreateSession() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
-  title: { fontSize: 22, margin: '0 0 20px 0' },
+  header: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 },
+  title: { fontSize: 22, margin: 0 },
   error: { color: '#e74c3c', fontSize: 14, marginBottom: 12 },
   form: { display: 'flex', flexDirection: 'column', gap: 16 },
   label: {

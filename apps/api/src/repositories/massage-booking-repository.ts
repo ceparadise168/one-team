@@ -24,6 +24,7 @@ export interface MassageBookingRepository {
   findScheduleById(tenantId: string, scheduleId: string): Promise<MassageScheduleRecord | null>;
   updateSchedule(schedule: MassageScheduleRecord): Promise<void>;
   listSchedules(tenantId: string): Promise<MassageScheduleRecord[]>;
+  listAllActiveSchedules(): Promise<MassageScheduleRecord[]>;
 }
 
 export class InMemoryMassageBookingRepository implements MassageBookingRepository {
@@ -128,5 +129,9 @@ export class InMemoryMassageBookingRepository implements MassageBookingRepositor
 
   async listSchedules(tenantId: string): Promise<MassageScheduleRecord[]> {
     return this.schedules.filter(s => s.tenantId === tenantId);
+  }
+
+  async listAllActiveSchedules(): Promise<MassageScheduleRecord[]> {
+    return this.schedules.filter(s => s.status === 'ACTIVE');
   }
 }

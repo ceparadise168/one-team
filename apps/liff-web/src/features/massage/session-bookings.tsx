@@ -1,38 +1,22 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import { useSessionBookings, useAdminCancelBooking, useExecuteDraw } from './use-massage';
 import type { MassageBooking } from './use-massage';
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-}
-
-function formatSlotRange(iso: string, durationMinutes: number): string {
-  const start = new Date(iso);
-  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
-  const fmt = (d: Date) =>
-    d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${fmt(start)} - ${fmt(end)}`;
-}
+import { formatTime, formatDateTime, formatSlotRange, sharedStyles } from './massage-shared';
 
 function getStatusBadge(status: MassageBooking['status']): { label: string; style: React.CSSProperties } {
   switch (status) {
     case 'CONFIRMED':
-      return { label: '預約成功', style: styles.confirmedBadge };
+      return { label: '預約成功', style: sharedStyles.confirmedBadge };
     case 'REGISTERED':
-      return { label: '等待抽籤', style: styles.registeredBadge };
+      return { label: '等待抽籤', style: sharedStyles.registeredBadge };
     case 'WAITLISTED':
-      return { label: '候補中', style: styles.waitlistedBadge };
+      return { label: '候補中', style: sharedStyles.waitlistedBadge };
     case 'UNSUCCESSFUL':
-      return { label: '未中籤', style: styles.unsuccessfulBadge };
+      return { label: '未中籤', style: sharedStyles.unsuccessfulBadge };
     case 'CANCELLED':
-      return { label: '已取消', style: styles.cancelledBadge };
+      return { label: '已取消', style: sharedStyles.cancelledBadge };
   }
 }
 
@@ -46,6 +30,7 @@ export function SessionBookings() {
   );
   const { cancel, loading: cancelling } = useAdminCancelBooking(apiBaseUrl, accessToken);
   const { draw, loading: drawing } = useExecuteDraw(apiBaseUrl, accessToken);
+  const navigate = useNavigate();
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   async function handleAdminCancel(bookingId: string) {
@@ -89,7 +74,10 @@ export function SessionBookings() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>場次預約明細</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button style={sharedStyles.backBtn} onClick={() => navigate('/massage/admin')}>← 返回管理</button>
+        <h1 style={styles.title}>場次預約明細</h1>
+      </div>
 
       {loading ? (
         <p style={styles.empty}>載入中...</p>
@@ -102,7 +90,7 @@ export function SessionBookings() {
               <div style={styles.cardHeader}>
                 <span style={styles.cardDate}>{session.date}</span>
                 <span
-                  style={session.status === 'ACTIVE' ? styles.activeBadge : styles.cancelledStatusBadge}
+                  style={session.status === 'ACTIVE' ? sharedStyles.activeBadge : sharedStyles.cancelledBadge}
                 >
                   {session.status === 'ACTIVE' ? '進行中' : '已取消'}
                 </span>
@@ -210,7 +198,7 @@ export function SessionBookings() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
-  title: { fontSize: 22, margin: '0 0 16px 0' },
+  title: { fontSize: 22, margin: 0 },
   subtitle: { fontSize: 16, margin: '20px 0 12px 0', color: '#333' },
   message: { textAlign: 'center', color: '#1a73e8', marginTop: 8, marginBottom: 8, fontSize: 14 },
   empty: { color: '#999', textAlign: 'center', marginTop: 40 },
@@ -274,62 +262,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'bold',
     cursor: 'pointer',
     marginBottom: 8,
-  },
-  activeBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  cancelledStatusBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#ffebee',
-    color: '#c62828',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  confirmedBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  registeredBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  waitlistedBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  unsuccessfulBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#f5f5f5',
-    color: '#999',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  cancelledBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#ffebee',
-    color: '#c62828',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   adminCancelBtn: {
     marginTop: 10,

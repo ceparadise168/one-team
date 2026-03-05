@@ -42,7 +42,7 @@ interface CreateScheduleInput {
   createdByEmployeeId: string;
 }
 
-function localTimeToISO(date: string, time: string, _timezone: string): string {
+function localTimeToISO(date: string, time: string): string {
   // For Asia/Taipei (+08:00), convert "2026-03-12" + "12:00" → "2026-03-12T04:00:00.000Z"
   return new Date(`${date}T${time}:00+08:00`).toISOString();
 }
@@ -178,9 +178,10 @@ export class MassageBookingService {
     if (status === 'CONFIRMED') {
       await this.notify(tenantId, lineUserId, this.formatConfirmedMessage(session, slotStartAt));
     } else if (status === 'WAITLISTED') {
-      await this.notify(tenantId, lineUserId, `📝 你已加入 ${session.date} 按摩的候補名單`);
+      const range = this.formatSlotTimeRange(slotStartAt, session.slotDurationMinutes);
+      await this.notify(tenantId, lineUserId, `📝 你已加入 ${session.date} ${range} 按摩的候補名單，如有名額將自動通知你`);
     } else {
-      await this.notify(tenantId, lineUserId, this.formatRegisteredMessage(session));
+      await this.notify(tenantId, lineUserId, this.formatRegisteredMessage(session, slotStartAt));
     }
 
     return { bookingId };
@@ -230,14 +231,18 @@ export class MassageBookingService {
     session.drawnAt = this.options.now().toISOString();
     await this.massageRepo.updateSession(session);
 
-    for (const booking of allWinners) {
-      const msg = `🎉 恭喜！你已中籤 ${session.date} 的按摩（${session.location}）`;
-      await this.notify(tenantId, booking.lineUserId, msg);
-    }
-    for (const booking of allLosers) {
-      const msg = `📋 ${session.date} 的按摩未中籤，已加入候補名單`;
-      await this.notify(tenantId, booking.lineUserId, msg);
-    }
+    await Promise.all([
+      ...allWinners.map((booking) => {
+        const range = this.formatSlotTimeRange(booking.slotStartAt, session.slotDurationMinutes);
+        const msg = `🎉 恭喜！你已中籤 ${session.date} ${range} 的按摩（${session.location}）\n⚠️ 若需取消請提早操作，以便候補者遞補。`;
+        return this.notify(tenantId, booking.lineUserId, msg);
+      }),
+      ...allLosers.map((booking) => {
+        const range = this.formatSlotTimeRange(booking.slotStartAt, session.slotDurationMinutes);
+        const msg = `📋 ${session.date} ${range} 的按摩未中籤，已加入候補名單，如有名額將自動通知你`;
+        return this.notify(tenantId, booking.lineUserId, msg);
+      }),
+    ]);
   }
 
   async cancelBooking(tenantId: string, bookingId: string, employeeId: string, reason?: string): Promise<void> {
@@ -364,8 +369,8 @@ export class MassageBookingService {
       );
       if (duplicate) continue;
 
-      const startAt = localTimeToISO(targetDate, schedule.startTime, schedule.timezone);
-      const endAt = localTimeToISO(targetDate, schedule.endTime, schedule.timezone);
+      const startAt = localTimeToISO(targetDate, schedule.startTime);
+      const endAt = localTimeToISO(targetDate, schedule.endTime);
 
       // Calculate openAt: targetDate - openLeadDays at midnight UTC
       const openDate = new Date(`${targetDate}T00:00:00Z`);
@@ -415,19 +420,36 @@ export class MassageBookingService {
     next.status = 'CONFIRMED';
     await this.massageRepo.updateBooking(next);
 
-    const timeStr = new Date(slotStartAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    const range = this.formatSlotTimeRange(slotStartAt, session.slotDurationMinutes);
     await this.notify(tenantId, next.lineUserId,
-      `🎉 你已遞補成功！${session.date} ${timeStr} 的按摩（${session.location}）`);
+      `🎉 你已遞補成功！${session.date} ${range} 的按摩（${session.location}）\n⚠️ 若需取消請提早操作，以便候補者遞補。`);
+  }
+
+  private formatSlotTimeRange(slotStartAt: string, durationMinutes: number): string {
+    const start = new Date(slotStartAt);
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+    const fmt = (d: Date) => d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${fmt(start)}–${fmt(end)}`;
   }
 
   private formatConfirmedMessage(session: MassageSessionRecord, slotStartAt?: string): string {
     const time = slotStartAt ?? session.startAt;
-    const timeStr = new Date(time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    return `✅ 你已成功預約 ${session.date} ${timeStr} 的按摩（${session.location}）`;
+    const range = this.formatSlotTimeRange(time, session.slotDurationMinutes);
+    return `✅ 你已成功預約 ${session.date} ${range} 的按摩（${session.location}）\n⚠️ 若需取消請提早操作，以便候補者遞補。`;
   }
 
-  private formatRegisteredMessage(session: MassageSessionRecord): string {
-    return `📝 已登記 ${session.date} 的按摩抽籤，結果將於抽籤後通知`;
+  private formatRegisteredMessage(session: MassageSessionRecord, slotStartAt?: string): string {
+    const slotInfo = slotStartAt
+      ? ` ${this.formatSlotTimeRange(slotStartAt, session.slotDurationMinutes)}`
+      : '';
+    const resultTime = session.drawAt
+      ? (() => {
+          const d = new Date(new Date(session.drawAt).getTime() + 5 * 60 * 1000);
+          return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+        })()
+      : null;
+    const timeHint = resultTime ? `，預計 ${resultTime} 後公布結果` : '，結果將於抽籤後通知';
+    return `📝 已登記 ${session.date}${slotInfo} 的按摩抽籤${timeHint}`;
   }
 
   private async notify(tenantId: string, lineUserId: string, text: string): Promise<void> {

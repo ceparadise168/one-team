@@ -1,14 +1,17 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import {
   useMassageSchedules,
   useCreateMassageSchedule,
   useToggleMassageSchedule,
 } from './use-massage';
+import { sharedStyles } from './massage-shared';
 
 const DAY_NAMES = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
 
 export function ScheduleManagement() {
+  const navigate = useNavigate();
   const { apiBaseUrl, accessToken } = useAuth();
   const { schedules, loading, error, refresh } = useMassageSchedules(apiBaseUrl, accessToken);
   const { create, loading: creating, error: createError } = useCreateMassageSchedule(apiBaseUrl, accessToken);
@@ -60,7 +63,10 @@ export function ScheduleManagement() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>排程管理</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button style={sharedStyles.backBtn} onClick={() => navigate('/massage/admin')}>← 返回管理</button>
+        <h1 style={styles.titleNoMargin}>排程管理</h1>
+      </div>
 
       {actionMessage && <p style={styles.message}>{actionMessage}</p>}
       {createError && <p style={styles.error}>{createError}</p>}
@@ -80,10 +86,10 @@ export function ScheduleManagement() {
               <div style={styles.cardHeader}>
                 <span style={styles.cardDay}>{DAY_NAMES[s.dayOfWeek]}</span>
                 <div style={styles.badgeRow}>
-                  <span style={s.mode === 'LOTTERY' ? styles.lotteryBadge : styles.fcfsBadge}>
+                  <span style={s.mode === 'LOTTERY' ? sharedStyles.lotteryBadge : sharedStyles.fcfsBadge}>
                     {s.mode === 'LOTTERY' ? '抽籤' : '先到先得'}
                   </span>
-                  <span style={s.status === 'ACTIVE' ? styles.activeBadge : styles.pausedBadge}>
+                  <span style={s.status === 'ACTIVE' ? sharedStyles.activeBadge : sharedStyles.pausedBadge}>
                     {s.status === 'ACTIVE' ? '啟用' : '暫停'}
                   </span>
                 </div>
@@ -247,6 +253,7 @@ export function ScheduleManagement() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
   title: { fontSize: 22, margin: '0 0 16px 0' },
+  titleNoMargin: { fontSize: 22, margin: 0 },
   sectionTitle: { fontSize: 18, margin: '0 0 12px 0', color: '#333' },
   message: { textAlign: 'center', color: '#1a73e8', marginTop: 8, marginBottom: 8, fontSize: 14 },
   empty: { color: '#999', textAlign: 'center', marginTop: 20 },
@@ -268,38 +275,6 @@ const styles: Record<string, React.CSSProperties> = {
   cardTime: { margin: '4px 0', fontSize: 14, color: '#333' },
   cardMeta: { margin: '4px 0', fontSize: 13, color: '#666' },
   badgeRow: { display: 'flex', gap: 6 },
-  fcfsBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e3f2fd',
-    color: '#1565c0',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  lotteryBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  activeBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  pausedBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#f5f5f5',
-    color: '#757575',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   pauseBtn: {
     marginTop: 12,
     width: '100%',

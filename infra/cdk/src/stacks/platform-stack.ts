@@ -341,6 +341,41 @@ export class PlatformStack extends Stack {
       targets: [new targets.LambdaFunction(massageDrawWorker)],
     });
 
+    // --- Massage Schedule Generation Worker ---
+    const massageScheduleWorker = new lambdaNodejs.NodejsFunction(this, 'MassageScheduleWorker', {
+      functionName: `${prefix}-massage-schedule-worker`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: fileURLToPath(new URL('../../../../apps/api/src/workers/massage-schedule-worker.ts', import.meta.url)),
+      handler: 'handler',
+      timeout: Duration.seconds(120),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        USE_DYNAMODB_REPOSITORIES: 'true',
+        USE_AWS_SECRETS_MANAGER: 'true',
+        LINE_INTEGRATION_MODE: 'real',
+        LINE_SECRET_PREFIX: lineSecretPrefix,
+        MASSAGE_TABLE_NAME: `${prefix}-employees`,
+        EMPLOYEES_TABLE_NAME: `${prefix}-employees`,
+      },
+    });
+
+    employeesTable.grantReadWriteData(massageScheduleWorker);
+    massageScheduleWorker.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${lineSecretPrefix}/*`,
+        ],
+      })
+    );
+
+    new events.Rule(this, 'MassageScheduleRule', {
+      ruleName: `${prefix}-massage-schedule-rule`,
+      schedule: events.Schedule.rate(Duration.hours(6)),
+      targets: [new targets.LambdaFunction(massageScheduleWorker)],
+    });
+
     const lineCredentialsSecret = new secretsmanager.Secret(this, 'LineCredentialsSecret', {
       secretName: `${prefix}/line/credentials`,
       description: 'LINE credentials for tenant setup wizard'

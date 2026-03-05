@@ -10,17 +10,9 @@ import {
 } from './use-massage';
 import type { MassageSession, MassageBooking, SlotInfo } from './use-massage';
 import { SlotPicker } from './slot-picker';
+import { formatTime, formatDateTime, sharedStyles } from './massage-shared';
 
 type Tab = 'sessions' | 'bookings';
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-}
 
 function canCancelBooking(booking: MassageBooking, session: MassageSession | undefined): boolean {
   if (booking.status !== 'CONFIRMED' && booking.status !== 'REGISTERED' && booking.status !== 'WAITLISTED') return false;
@@ -33,15 +25,15 @@ function canCancelBooking(booking: MassageBooking, session: MassageSession | und
 function getBookingStatusBadge(status: MassageBooking['status']): { label: string; style: React.CSSProperties } {
   switch (status) {
     case 'CONFIRMED':
-      return { label: '預約成功', style: styles.confirmedBadge };
+      return { label: '預約成功', style: sharedStyles.confirmedBadge };
     case 'REGISTERED':
-      return { label: '等待抽籤', style: styles.registeredBadge };
+      return { label: '等待抽籤', style: sharedStyles.registeredBadge };
     case 'WAITLISTED':
-      return { label: '候補中', style: styles.waitlistedBadge };
+      return { label: '候補中', style: sharedStyles.waitlistedBadge };
     case 'UNSUCCESSFUL':
-      return { label: '未中籤', style: styles.unsuccessfulBadge };
+      return { label: '未中籤', style: sharedStyles.unsuccessfulBadge };
     case 'CANCELLED':
-      return { label: '已取消', style: styles.cancelledBadge };
+      return { label: '已取消', style: sharedStyles.cancelledBadge };
   }
 }
 
@@ -234,7 +226,7 @@ export function SessionList() {
                   >
                     <div style={styles.cardHeader}>
                       <span style={styles.cardDate}>{session.date}</span>
-                      <span style={session.mode === 'LOTTERY' ? styles.lotteryBadge : styles.fcfsBadge}>
+                      <span style={session.mode === 'LOTTERY' ? sharedStyles.lotteryBadge : sharedStyles.fcfsBadge}>
                         {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
                       </span>
                     </div>
@@ -452,62 +444,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     fontSize: 14,
     cursor: 'pointer',
-  },
-  fcfsBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e3f2fd',
-    color: '#1565c0',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  lotteryBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  confirmedBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  registeredBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  waitlistedBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#fff3e0',
-    color: '#e65100',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  unsuccessfulBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#f5f5f5',
-    color: '#999',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  cancelledBadge: {
-    padding: '2px 10px',
-    borderRadius: 12,
-    backgroundColor: '#ffebee',
-    color: '#c62828',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   slotSection: {
     marginTop: 12,

@@ -283,4 +283,17 @@ export class DynamoDbMassageBookingRepository implements MassageBookingRepositor
     }));
     return (result.Items ?? []).map(item => stripMetadata<MassageScheduleRecord>(item as Record<string, unknown>)!);
   }
+
+  async listAllActiveSchedules(): Promise<MassageScheduleRecord[]> {
+    const result = await this.client.send(new ScanCommand({
+      TableName: this.tableName,
+      FilterExpression: 'entityType = :et AND #s = :active',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':et': 'MASSAGE_SCHEDULE',
+        ':active': 'ACTIVE',
+      },
+    }));
+    return (result.Items ?? []).map(item => stripMetadata<MassageScheduleRecord>(item as Record<string, unknown>)!);
+  }
 }

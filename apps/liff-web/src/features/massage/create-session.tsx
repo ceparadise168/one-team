@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import { useCreateMassageSession } from './use-massage';
@@ -15,11 +15,25 @@ export function CreateSession() {
   const [startAt, setStartAt] = useState('');
   const [endAt, setEndAt] = useState('');
   const [location, setLocation] = useState('');
-  const [quota, setQuota] = useState('');
+  const [slotDurationMinutes, setSlotDurationMinutes] = useState('20');
+  const [therapistCount, setTherapistCount] = useState('1');
   const [mode, setMode] = useState<Mode>('FIRST_COME');
   const [drawMode, setDrawMode] = useState<DrawMode>('AUTO');
   const [openAt, setOpenAt] = useState('');
   const [drawAt, setDrawAt] = useState('');
+
+  const capacityInfo = useMemo(() => {
+    if (!startAt || !endAt || !slotDurationMinutes) return null;
+    const startMs = new Date(`2000-01-01T${startAt}`).getTime();
+    const endMs = new Date(`2000-01-01T${endAt}`).getTime();
+    if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return null;
+    const durationMs = endMs - startMs;
+    const slotMs = parseInt(slotDurationMinutes, 10) * 60 * 1000;
+    if (slotMs <= 0) return null;
+    const slotCount = Math.floor(durationMs / slotMs);
+    const tc = parseInt(therapistCount, 10) || 1;
+    return { slotCount, therapistCount: tc, total: slotCount * tc };
+  }, [startAt, endAt, slotDurationMinutes, therapistCount]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +43,8 @@ export function CreateSession() {
         startAt: string;
         endAt: string;
         location: string;
-        quota: number;
+        slotDurationMinutes: number;
+        therapistCount: number;
         mode: Mode;
         openAt: string;
         drawAt?: string;
@@ -39,7 +54,8 @@ export function CreateSession() {
         startAt: `${date}T${startAt}`,
         endAt: `${date}T${endAt}`,
         location,
-        quota: parseInt(quota, 10),
+        slotDurationMinutes: parseInt(slotDurationMinutes, 10),
+        therapistCount: parseInt(therapistCount, 10),
         mode,
         openAt: openAt ? new Date(openAt).toISOString() : new Date().toISOString(),
       };
@@ -107,17 +123,36 @@ export function CreateSession() {
           />
         </label>
 
-        <label style={styles.label}>
-          名額
-          <input
-            type="number"
-            value={quota}
-            onChange={(e) => setQuota(e.target.value)}
-            required
-            min={1}
-            style={styles.input}
-          />
-        </label>
+        <div style={styles.row}>
+          <label style={{ ...styles.label, flex: 1 }}>
+            每節時長（分鐘）
+            <input
+              type="number"
+              value={slotDurationMinutes}
+              onChange={(e) => setSlotDurationMinutes(e.target.value)}
+              required
+              min={5}
+              style={styles.input}
+            />
+          </label>
+          <label style={{ ...styles.label, flex: 1 }}>
+            同時段按摩師人數
+            <input
+              type="number"
+              value={therapistCount}
+              onChange={(e) => setTherapistCount(e.target.value)}
+              required
+              min={1}
+              style={styles.input}
+            />
+          </label>
+        </div>
+
+        {capacityInfo && (
+          <p style={styles.capacityInfo}>
+            {capacityInfo.slotCount} 時段 × {capacityInfo.therapistCount} 位 = {capacityInfo.total} 個名額
+          </p>
+        )}
 
         <fieldset style={styles.fieldset}>
           <legend style={styles.legend}>預約模式</legend>
@@ -223,6 +258,16 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
   },
   row: { display: 'flex', gap: 12 },
+  capacityInfo: {
+    margin: 0,
+    padding: '8px 12px',
+    backgroundColor: '#e8f5e9',
+    borderRadius: 8,
+    fontSize: 14,
+    color: '#2e7d32',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   fieldset: {
     border: '1px solid #e0e0e0',
     borderRadius: 8,

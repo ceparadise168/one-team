@@ -6,8 +6,10 @@ import {
   useMyMassageBookings,
   useMassageBook,
   useCancelMassageBooking,
+  useSessionSlots,
 } from './use-massage';
-import type { MassageSession, MassageBooking } from './use-massage';
+import type { MassageSession, MassageBooking, SlotInfo } from './use-massage';
+import { SlotPicker } from './slot-picker';
 
 type Tab = 'sessions' | 'bookings';
 
@@ -21,7 +23,7 @@ function formatDateTime(iso: string): string {
 }
 
 function canCancelBooking(booking: MassageBooking, session: MassageSession | undefined): boolean {
-  if (booking.status !== 'CONFIRMED' && booking.status !== 'REGISTERED') return false;
+  if (booking.status !== 'CONFIRMED' && booking.status !== 'REGISTERED' && booking.status !== 'WAITLISTED') return false;
   if (!session) return false;
   const twoHoursBefore = new Date(new Date(session.startAt).getTime() - 2 * 60 * 60 * 1000);
   return new Date() < twoHoursBefore;
@@ -34,6 +36,8 @@ function getBookingStatusBadge(status: MassageBooking['status']): { label: strin
       return { label: '預約成功', style: styles.confirmedBadge };
     case 'REGISTERED':
       return { label: '等待抽籤', style: styles.registeredBadge };
+    case 'WAITLISTED':
+      return { label: '候補中', style: styles.waitlistedBadge };
     case 'UNSUCCESSFUL':
       return { label: '未中籤', style: styles.unsuccessfulBadge };
     case 'CANCELLED':
@@ -68,7 +72,79 @@ function getSessionAction(
     return { label: '登記抽籤', disabled: false, booked: false };
   }
 
-  return { label: '立即預約', disabled: false, booked: false };
+  return { label: '選擇時段', disabled: false, booked: false };
+}
+
+/** Inner component that fetches and shows slots for an expanded session */
+function SessionSlotSection({
+  session,
+  onBooked,
+}: {
+  session: MassageSession;
+  onBooked: () => void;
+}) {
+  const { apiBaseUrl, accessToken } = useAuth();
+  const { slots, loading: slotsLoading, error: slotsError, refresh: refreshSlots } = useSessionSlots(
+    apiBaseUrl,
+    accessToken,
+    session.sessionId
+  );
+  const { book, loading: booking } = useMassageBook(apiBaseUrl, accessToken);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [bookError, setBookError] = useState<string | null>(null);
+
+  const selectedSlotInfo: SlotInfo | undefined = slots.find((s) => s.startAt === selectedSlot);
+  const isFull = selectedSlotInfo ? selectedSlotInfo.confirmed >= selectedSlotInfo.capacity : false;
+
+  async function handleBook() {
+    if (!selectedSlot) return;
+    const confirmMsg = isFull
+      ? '此時段已滿，確定要加入候補嗎？'
+      : '確定要預約此時段嗎？';
+    if (!confirm(confirmMsg)) return;
+    try {
+      setBookError(null);
+      await book(session.sessionId, selectedSlot);
+      refreshSlots();
+      onBooked();
+    } catch (e) {
+      setBookError((e as Error).message);
+    }
+  }
+
+  if (slotsLoading) {
+    return <p style={styles.slotLoading}>載入時段中...</p>;
+  }
+  if (slotsError) {
+    return <p style={styles.error}>錯誤: {slotsError}</p>;
+  }
+
+  return (
+    <div style={styles.slotSection}>
+      <p style={styles.slotSectionTitle}>請選擇時段：</p>
+      <SlotPicker
+        slots={slots}
+        slotDurationMinutes={session.slotDurationMinutes}
+        selectedSlot={selectedSlot}
+        onSelect={setSelectedSlot}
+      />
+      {selectedSlot && isFull && (
+        <p style={styles.waitlistWarning}>
+          ⚠️ 此時段已滿，將加入候補。候補成功時系統將自動確認您的預約，届時會透過 LINE 通知您。
+        </p>
+      )}
+      {bookError && <p style={styles.bookError}>{bookError}</p>}
+      {selectedSlot && (
+        <button
+          style={isFull ? styles.waitlistBtn : styles.bookBtn}
+          disabled={booking}
+          onClick={handleBook}
+        >
+          {booking ? '預約中...' : isFull ? '加入候補' : '預約'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function SessionList() {
@@ -77,31 +153,28 @@ export function SessionList() {
     useMassageSessions(apiBaseUrl, accessToken);
   const { bookings, loading: bookingsLoading, error: bookingsError, refresh: refreshBookings } =
     useMyMassageBookings(apiBaseUrl, accessToken);
-  const { book, loading: booking } = useMassageBook(apiBaseUrl, accessToken);
   const { cancel, loading: cancelling } = useCancelMassageBooking(apiBaseUrl, accessToken);
 
   const [tab, setTab] = useState<Tab>('sessions');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   const loading = tab === 'sessions' ? sessionsLoading : bookingsLoading;
   const error = tab === 'sessions' ? sessionsError : bookingsError;
 
   const activeSessions = sessions.filter((s) => s.status === 'ACTIVE');
 
-  async function handleBook(session: MassageSession) {
-    const confirmMsg = session.mode === 'LOTTERY'
-      ? '確定要登記抽籤嗎？'
-      : '確定要預約此場次嗎？';
-    if (!confirm(confirmMsg)) return;
-    try {
-      setActionMessage(null);
-      await book(session.sessionId);
-      setActionMessage(session.mode === 'LOTTERY' ? '已登記抽籤！' : '預約成功！');
-      refreshSessions();
-      refreshBookings();
-    } catch (e) {
-      setActionMessage((e as Error).message);
-    }
+  function handleSessionClick(session: MassageSession) {
+    const action = getSessionAction(session, bookings);
+    if (action.booked || action.disabled) return;
+    setExpandedSessionId((prev) => (prev === session.sessionId ? null : session.sessionId));
+  }
+
+  function handleBooked() {
+    setExpandedSessionId(null);
+    setActionMessage('預約成功！');
+    refreshSessions();
+    refreshBookings();
   }
 
   async function handleCancelBooking(bookingId: string) {
@@ -152,38 +225,49 @@ export function SessionList() {
           <div style={styles.list}>
             {activeSessions.map((session) => {
               const action = getSessionAction(session, bookings);
+              const isExpanded = expandedSessionId === session.sessionId;
               return (
                 <div key={session.sessionId} style={styles.card}>
-                  <div style={styles.cardHeader}>
-                    <span style={styles.cardDate}>{session.date}</span>
-                    <span style={session.mode === 'LOTTERY' ? styles.lotteryBadge : styles.fcfsBadge}>
-                      {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
-                    </span>
-                  </div>
-                  <p style={styles.cardTime}>
-                    {formatTime(session.startAt)} – {formatTime(session.endAt)}
-                  </p>
-                  <p style={styles.cardMeta}>{session.location} · 名額 {session.quota}</p>
-                  {session.mode === 'LOTTERY' && session.drawAt && (
-                    <p style={styles.cardDrawTime}>
-                      抽籤時間: {formatDateTime(session.drawAt)}
+                  <div
+                    style={{ cursor: action.booked || action.disabled ? 'default' : 'pointer' }}
+                    onClick={() => handleSessionClick(session)}
+                  >
+                    <div style={styles.cardHeader}>
+                      <span style={styles.cardDate}>{session.date}</span>
+                      <span style={session.mode === 'LOTTERY' ? styles.lotteryBadge : styles.fcfsBadge}>
+                        {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
+                      </span>
+                    </div>
+                    <p style={styles.cardTime}>
+                      {formatTime(session.startAt)} – {formatTime(session.endAt)}
                     </p>
-                  )}
+                    <p style={styles.cardMeta}>
+                      {session.location} · {session.slotDurationMinutes}分/節 · {session.therapistCount}位按摩師
+                    </p>
+                    {session.mode === 'LOTTERY' && session.drawAt && (
+                      <p style={styles.cardDrawTime}>
+                        抽籤時間: {formatDateTime(session.drawAt)}
+                      </p>
+                    )}
+                  </div>
                   <div style={styles.actionRow}>
                     {action.booked ? (
                       <span style={{ ...styles.bookedBadge, ...(action.statusStyle || {}) }}>
                         {action.statusLabel}
                       </span>
-                    ) : (
+                    ) : !isExpanded ? (
                       <button
                         style={action.disabled ? styles.disabledBtn : styles.bookBtn}
-                        disabled={action.disabled || booking}
-                        onClick={() => handleBook(session)}
+                        disabled={action.disabled}
+                        onClick={() => handleSessionClick(session)}
                       >
                         {action.label}
                       </button>
-                    )}
+                    ) : null}
                   </div>
+                  {isExpanded && (
+                    <SessionSlotSection session={session} onBooked={handleBooked} />
+                  )}
                 </div>
               );
             })}
@@ -212,8 +296,13 @@ export function SessionList() {
                     </p>
                     <p style={styles.cardMeta}>{session.location}</p>
                     <p style={styles.cardMeta}>
-                      {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'} · 名額 {session.quota}
+                      {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'} · {session.slotDurationMinutes}分/節 · {session.therapistCount}位按摩師
                     </p>
+                    {bk.slotStartAt && (
+                      <p style={styles.cardSlotTime}>
+                        預約時段: {formatTime(bk.slotStartAt)}
+                      </p>
+                    )}
                   </>
                 )}
                 {showCancel && (
@@ -300,6 +389,12 @@ const styles: Record<string, React.CSSProperties> = {
   cardDate: { fontSize: 16, fontWeight: 'bold' },
   cardTime: { margin: '4px 0', fontSize: 14, color: '#333' },
   cardMeta: { margin: '4px 0', fontSize: 13, color: '#666' },
+  cardSlotTime: {
+    margin: '4px 0',
+    fontSize: 13,
+    color: '#1DB446',
+    fontWeight: 'bold',
+  },
   cardDrawTime: {
     margin: '4px 0',
     fontSize: 13,
@@ -317,6 +412,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 'bold',
     cursor: 'pointer',
+  },
+  waitlistBtn: {
+    width: '100%',
+    padding: '10px 0',
+    backgroundColor: '#e65100',
+    color: 'white',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginTop: 12,
   },
   disabledBtn: {
     width: '100%',
@@ -378,6 +485,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 'bold',
   },
+  waitlistedBadge: {
+    padding: '2px 10px',
+    borderRadius: 12,
+    backgroundColor: '#fff3e0',
+    color: '#e65100',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   unsuccessfulBadge: {
     padding: '2px 10px',
     borderRadius: 12,
@@ -393,5 +508,37 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#c62828',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  slotSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTop: '1px solid #e0e0e0',
+  },
+  slotSectionTitle: {
+    margin: '0 0 4px 0',
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  slotLoading: {
+    color: '#999',
+    textAlign: 'center',
+    margin: '12px 0',
+    fontSize: 13,
+  },
+  waitlistWarning: {
+    margin: '10px 0 0 0',
+    padding: '8px 12px',
+    backgroundColor: '#fff8e1',
+    border: '1px solid #ffcc02',
+    borderRadius: 8,
+    fontSize: 12,
+    color: '#e65100',
+    lineHeight: 1.5,
+  },
+  bookError: {
+    color: '#e74c3c',
+    fontSize: 13,
+    margin: '8px 0 0 0',
   },
 };

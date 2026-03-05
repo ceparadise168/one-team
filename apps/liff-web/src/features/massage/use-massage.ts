@@ -8,6 +8,8 @@ export interface MassageSession {
   endAt: string;
   location: string;
   quota: number;
+  slotDurationMinutes: number;
+  therapistCount: number;
   mode: 'FIRST_COME' | 'LOTTERY';
   openAt: string;
   drawAt: string | null;
@@ -24,10 +26,18 @@ export interface MassageBooking {
   sessionId: string;
   employeeId: string;
   lineUserId: string;
-  status: 'REGISTERED' | 'CONFIRMED' | 'UNSUCCESSFUL' | 'CANCELLED';
+  slotStartAt: string;
+  status: 'REGISTERED' | 'CONFIRMED' | 'WAITLISTED' | 'UNSUCCESSFUL' | 'CANCELLED';
   cancelledAt: string | null;
   cancellationReason: string | null;
   createdAt: string;
+}
+
+export interface SlotInfo {
+  startAt: string;
+  confirmed: number;
+  waitlisted: number;
+  capacity: number;
 }
 
 export function useMassageSessions(apiBaseUrl: string, accessToken: string) {
@@ -89,12 +99,41 @@ export function useMyMassageBookings(apiBaseUrl: string, accessToken: string) {
   return { bookings, loading, error, refresh };
 }
 
+export function useSessionSlots(apiBaseUrl: string, accessToken: string, sessionId: string) {
+  const [slots, setSlots] = useState<SlotInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/slots`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('載入失敗');
+        return r.json();
+      })
+      .then((data) => {
+        setSlots(data.slots ?? []);
+        setError(null);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [apiBaseUrl, accessToken, sessionId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { slots, loading, error, refresh };
+}
+
 export function useMassageBook(apiBaseUrl: string, accessToken: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const book = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, slotStartAt: string) => {
       setLoading(true);
       setError(null);
       try {
@@ -104,6 +143,7 @@ export function useMassageBook(apiBaseUrl: string, accessToken: string) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ slotStartAt }),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -165,7 +205,8 @@ export function useCreateMassageSession(apiBaseUrl: string, accessToken: string)
       startAt: string;
       endAt: string;
       location: string;
-      quota: number;
+      slotDurationMinutes: number;
+      therapistCount: number;
       mode: 'FIRST_COME' | 'LOTTERY';
       openAt: string;
       drawAt?: string;

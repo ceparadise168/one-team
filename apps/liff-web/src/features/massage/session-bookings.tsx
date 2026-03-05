@@ -13,12 +13,22 @@ function formatDateTime(iso: string): string {
   return `${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 }
 
+function formatSlotRange(iso: string, durationMinutes: number): string {
+  const start = new Date(iso);
+  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${fmt(start)} - ${fmt(end)}`;
+}
+
 function getStatusBadge(status: MassageBooking['status']): { label: string; style: React.CSSProperties } {
   switch (status) {
     case 'CONFIRMED':
       return { label: '預約成功', style: styles.confirmedBadge };
     case 'REGISTERED':
       return { label: '等待抽籤', style: styles.registeredBadge };
+    case 'WAITLISTED':
+      return { label: '候補中', style: styles.waitlistedBadge };
     case 'UNSUCCESSFUL':
       return { label: '未中籤', style: styles.unsuccessfulBadge };
     case 'CANCELLED':
@@ -52,7 +62,7 @@ export function SessionBookings() {
 
   async function handleDraw() {
     const registeredCount = bookings.filter(b => b.status === 'REGISTERED').length;
-    if (!confirm(`確定要執行抽籤嗎？共 ${registeredCount} 人登記，將抽出 ${session?.quota ?? '?'} 名。`)) return;
+    if (!confirm(`確定要執行抽籤嗎？共 ${registeredCount} 人登記。`)) return;
     try {
       setActionMessage(null);
       await draw(sessionId!);
@@ -65,7 +75,17 @@ export function SessionBookings() {
 
   const registeredCount = bookings.filter(b => b.status === 'REGISTERED').length;
   const confirmedCount = bookings.filter(b => b.status === 'CONFIRMED').length;
+  const waitlistedCount = bookings.filter(b => b.status === 'WAITLISTED').length;
   const canDraw = session?.mode === 'LOTTERY' && !session.drawnAt && registeredCount > 0;
+
+  // Group bookings by slotStartAt
+  const slotGroups = new Map<string, MassageBooking[]>();
+  for (const bk of bookings) {
+    const key = bk.slotStartAt || '_unknown';
+    if (!slotGroups.has(key)) slotGroups.set(key, []);
+    slotGroups.get(key)!.push(bk);
+  }
+  const sortedSlotKeys = [...slotGroups.keys()].sort();
 
   return (
     <div style={styles.container}>
@@ -92,7 +112,7 @@ export function SessionBookings() {
               </p>
               <p style={styles.cardMeta}>{session.location}</p>
               <p style={styles.cardMeta}>
-                名額: {session.quota} · {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
+                {session.slotDurationMinutes}分/節 · {session.therapistCount}位按摩師 · {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
               </p>
               {session.mode === 'LOTTERY' && session.drawAt && (
                 <p style={styles.cardMeta}>
@@ -104,8 +124,8 @@ export function SessionBookings() {
               )}
               <p style={styles.statsRow}>
                 {session.mode === 'LOTTERY'
-                  ? `登記: ${registeredCount} 人 · 中籤: ${confirmedCount} 人`
-                  : `已預約: ${confirmedCount} / ${session.quota} 人`}
+                  ? `登記: ${registeredCount} 人 · 中籤: ${confirmedCount} 人${waitlistedCount > 0 ? ` · 候補: ${waitlistedCount} 人` : ''}`
+                  : `已預約: ${confirmedCount} 人${waitlistedCount > 0 ? ` · 候補: ${waitlistedCount} 人` : ''}`}
               </p>
             </div>
           )}
@@ -129,33 +149,54 @@ export function SessionBookings() {
             <p style={styles.empty}>尚無預約</p>
           ) : (
             <div style={styles.list}>
-              {bookings.map((bk) => {
-                const badge = getStatusBadge(bk.status);
-                const canCancel = bk.status === 'CONFIRMED' || bk.status === 'REGISTERED';
+              {sortedSlotKeys.map((slotKey) => {
+                const slotBookings = slotGroups.get(slotKey)!;
+                const slotConfirmed = slotBookings.filter(b => b.status === 'CONFIRMED').length;
+                const slotWaitlisted = slotBookings.filter(b => b.status === 'WAITLISTED').length;
+                const slotLabel =
+                  slotKey === '_unknown'
+                    ? '未指定時段'
+                    : session
+                      ? formatSlotRange(slotKey, session.slotDurationMinutes)
+                      : formatTime(slotKey);
                 return (
-                  <div key={bk.bookingId} style={styles.card}>
-                    <div style={styles.cardHeader}>
-                      <span style={styles.employeeId}>{bk.employeeId}</span>
-                      <span style={badge.style}>{badge.label}</span>
+                  <div key={slotKey}>
+                    <div style={styles.slotHeader}>
+                      <span style={styles.slotHeaderTime}>{slotLabel}</span>
+                      <span style={styles.slotHeaderCount}>
+                        {slotConfirmed} 已確認{slotWaitlisted > 0 ? ` · ${slotWaitlisted} 候補` : ''}
+                      </span>
                     </div>
-                    <p style={styles.cardMeta}>
-                      登記時間: {new Date(bk.createdAt).toLocaleString('zh-TW')}
-                    </p>
-                    {bk.cancelledAt && (
-                      <p style={styles.cardMeta}>
-                        取消時間: {new Date(bk.cancelledAt).toLocaleString('zh-TW')}
-                        {bk.cancellationReason && ` (${bk.cancellationReason})`}
-                      </p>
-                    )}
-                    {canCancel && (
-                      <button
-                        style={styles.adminCancelBtn}
-                        disabled={cancelling}
-                        onClick={() => handleAdminCancel(bk.bookingId)}
-                      >
-                        管理員取消
-                      </button>
-                    )}
+                    {slotBookings.map((bk) => {
+                      const badge = getStatusBadge(bk.status);
+                      const canCancel = bk.status === 'CONFIRMED' || bk.status === 'REGISTERED' || bk.status === 'WAITLISTED';
+                      return (
+                        <div key={bk.bookingId} style={styles.card}>
+                          <div style={styles.cardHeader}>
+                            <span style={styles.employeeId}>{bk.employeeId}</span>
+                            <span style={badge.style}>{badge.label}</span>
+                          </div>
+                          <p style={styles.cardMeta}>
+                            登記時間: {new Date(bk.createdAt).toLocaleString('zh-TW')}
+                          </p>
+                          {bk.cancelledAt && (
+                            <p style={styles.cardMeta}>
+                              取消時間: {new Date(bk.cancelledAt).toLocaleString('zh-TW')}
+                              {bk.cancellationReason && ` (${bk.cancellationReason})`}
+                            </p>
+                          )}
+                          {canCancel && (
+                            <button
+                              style={styles.adminCancelBtn}
+                              disabled={cancelling}
+                              onClick={() => handleAdminCancel(bk.bookingId)}
+                            >
+                              管理員取消
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -204,6 +245,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'bold',
   },
   employeeId: { fontSize: 15, fontWeight: 'bold' },
+  slotHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '8px 12px',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  slotHeaderTime: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  slotHeaderCount: {
+    fontSize: 12,
+    color: '#666',
+  },
   drawBtn: {
     width: '100%',
     padding: '12px 0',
@@ -241,6 +300,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'bold',
   },
   registeredBadge: {
+    padding: '2px 10px',
+    borderRadius: 12,
+    backgroundColor: '#fff3e0',
+    color: '#e65100',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  waitlistedBadge: {
     padding: '2px 10px',
     borderRadius: 12,
     backgroundColor: '#fff3e0',

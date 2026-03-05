@@ -11,25 +11,29 @@ import type { MassageSession, MassageBooking } from './use-massage';
 
 type Tab = 'sessions' | 'bookings';
 
-function formatTime(isoString: string): string {
-  const d = new Date(isoString);
-  return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 }
 
 function canCancelBooking(booking: MassageBooking, session: MassageSession | undefined): boolean {
   if (booking.status !== 'CONFIRMED' && booking.status !== 'REGISTERED') return false;
   if (!session) return false;
-  const sessionStart = new Date(session.startAt);
-  const twoHoursBefore = new Date(sessionStart.getTime() - 2 * 60 * 60 * 1000);
+  const twoHoursBefore = new Date(new Date(session.startAt).getTime() - 2 * 60 * 60 * 1000);
   return new Date() < twoHoursBefore;
 }
 
+/** Employee-facing booking status */
 function getBookingStatusBadge(status: MassageBooking['status']): { label: string; style: React.CSSProperties } {
   switch (status) {
     case 'CONFIRMED':
-      return { label: '已確認', style: styles.confirmedBadge };
+      return { label: '預約成功', style: styles.confirmedBadge };
     case 'REGISTERED':
-      return { label: '已登記', style: styles.registeredBadge };
+      return { label: '等待抽籤', style: styles.registeredBadge };
     case 'UNSUCCESSFUL':
       return { label: '未中籤', style: styles.unsuccessfulBadge };
     case 'CANCELLED':
@@ -37,36 +41,34 @@ function getBookingStatusBadge(status: MassageBooking['status']): { label: strin
   }
 }
 
-function getSessionActionState(
+/** Determine what the session card button should show */
+function getSessionAction(
   session: MassageSession,
   myBookings: MassageBooking[]
-): { label: string; disabled: boolean; isBooked: boolean } {
+): { label: string; disabled: boolean; booked: boolean; statusLabel?: string; statusStyle?: React.CSSProperties } {
+  // Check if user has an active booking for this session
   const activeBooking = myBookings.find(
-    (b) => b.sessionId === session.sessionId && (b.status === 'CONFIRMED' || b.status === 'REGISTERED')
+    (b) => b.sessionId === session.sessionId && b.status !== 'CANCELLED'
   );
+
   if (activeBooking) {
-    return {
-      label: session.mode === 'LOTTERY' ? '已報名' : '已預約',
-      disabled: true,
-      isBooked: true,
-    };
+    const badge = getBookingStatusBadge(activeBooking.status);
+    return { label: '', disabled: true, booked: true, statusLabel: badge.label, statusStyle: badge.style };
   }
 
   const now = new Date();
   if (new Date(session.openAt) > now) {
-    return { label: '尚未開放', disabled: true, isBooked: false };
+    return { label: '尚未開放', disabled: true, booked: false };
   }
 
   if (session.mode === 'LOTTERY') {
     if (session.drawAt && new Date(session.drawAt) <= now) {
-      return { label: '報名已截止', disabled: true, isBooked: false };
+      return { label: '報名已截止', disabled: true, booked: false };
     }
-    return { label: '報名抽籤', disabled: false, isBooked: false };
+    return { label: '登記抽籤', disabled: false, booked: false };
   }
 
-  // FIRST_COME
-  // We check remaining quota from the session data; if no remaining info assume bookable
-  return { label: '預約', disabled: false, isBooked: false };
+  return { label: '立即預約', disabled: false, booked: false };
 }
 
 export function SessionList() {
@@ -86,11 +88,15 @@ export function SessionList() {
 
   const activeSessions = sessions.filter((s) => s.status === 'ACTIVE');
 
-  async function handleBook(sessionId: string) {
+  async function handleBook(session: MassageSession) {
+    const confirmMsg = session.mode === 'LOTTERY'
+      ? '確定要登記抽籤嗎？'
+      : '確定要預約此場次嗎？';
+    if (!confirm(confirmMsg)) return;
     try {
       setActionMessage(null);
-      await book(sessionId);
-      setActionMessage('預約成功！');
+      await book(session.sessionId);
+      setActionMessage(session.mode === 'LOTTERY' ? '已登記抽籤！' : '預約成功！');
       refreshSessions();
       refreshBookings();
     } catch (e) {
@@ -99,20 +105,16 @@ export function SessionList() {
   }
 
   async function handleCancelBooking(bookingId: string) {
-    if (!confirm('確定要取消此預約嗎？')) return;
+    if (!confirm('確定要取消嗎？')) return;
     try {
       setActionMessage(null);
       await cancel(bookingId);
-      setActionMessage('已取消預約');
+      setActionMessage('已取消');
       refreshSessions();
       refreshBookings();
     } catch (e) {
       setActionMessage((e as Error).message);
     }
-  }
-
-  function findSessionForBooking(booking: MassageBooking): MassageSession | undefined {
-    return sessions.find((s) => s.sessionId === booking.sessionId);
   }
 
   return (
@@ -122,7 +124,6 @@ export function SessionList() {
         <Link to="/massage/admin" style={styles.adminLink}>管理</Link>
       </div>
 
-      {/* Tab bar */}
       <div style={styles.tabBar}>
         <button
           style={tab === 'sessions' ? styles.tabActive : styles.tab}
@@ -150,28 +151,34 @@ export function SessionList() {
         ) : (
           <div style={styles.list}>
             {activeSessions.map((session) => {
-              const action = getSessionActionState(session, bookings);
+              const action = getSessionAction(session, bookings);
               return (
                 <div key={session.sessionId} style={styles.card}>
                   <div style={styles.cardHeader}>
                     <span style={styles.cardDate}>{session.date}</span>
                     <span style={session.mode === 'LOTTERY' ? styles.lotteryBadge : styles.fcfsBadge}>
-                      {session.mode === 'LOTTERY' ? '抽籤' : '先到先得'}
+                      {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
                     </span>
                   </div>
                   <p style={styles.cardTime}>
                     {formatTime(session.startAt)} – {formatTime(session.endAt)}
                   </p>
-                  <p style={styles.cardMeta}>{session.location}</p>
-                  <p style={styles.cardMeta}>名額: {session.quota}</p>
+                  <p style={styles.cardMeta}>{session.location} · 名額 {session.quota}</p>
+                  {session.mode === 'LOTTERY' && session.drawAt && (
+                    <p style={styles.cardDrawTime}>
+                      抽籤時間: {formatDateTime(session.drawAt)}
+                    </p>
+                  )}
                   <div style={styles.actionRow}>
-                    {action.isBooked ? (
-                      <span style={styles.bookedBadge}>{action.label}</span>
+                    {action.booked ? (
+                      <span style={{ ...styles.bookedBadge, ...(action.statusStyle || {}) }}>
+                        {action.statusLabel}
+                      </span>
                     ) : (
                       <button
                         style={action.disabled ? styles.disabledBtn : styles.bookBtn}
                         disabled={action.disabled || booking}
-                        onClick={() => handleBook(session.sessionId)}
+                        onClick={() => handleBook(session)}
                       >
                         {action.label}
                       </button>
@@ -187,7 +194,7 @@ export function SessionList() {
       ) : (
         <div style={styles.list}>
           {bookings.map((bk) => {
-            const session = findSessionForBooking(bk);
+            const session = sessions.find((s) => s.sessionId === bk.sessionId);
             const badge = getBookingStatusBadge(bk.status);
             const showCancel = canCancelBooking(bk, session);
             return (
@@ -204,6 +211,9 @@ export function SessionList() {
                       {formatTime(session.startAt)} – {formatTime(session.endAt)}
                     </p>
                     <p style={styles.cardMeta}>{session.location}</p>
+                    <p style={styles.cardMeta}>
+                      {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'} · 名額 {session.quota}
+                    </p>
                   </>
                 )}
                 {showCancel && (
@@ -290,6 +300,12 @@ const styles: Record<string, React.CSSProperties> = {
   cardDate: { fontSize: 16, fontWeight: 'bold' },
   cardTime: { margin: '4px 0', fontSize: 14, color: '#333' },
   cardMeta: { margin: '4px 0', fontSize: 13, color: '#666' },
+  cardDrawTime: {
+    margin: '4px 0',
+    fontSize: 13,
+    color: '#e65100',
+    fontWeight: 'bold',
+  },
   actionRow: { marginTop: 12 },
   bookBtn: {
     width: '100%',
@@ -316,8 +332,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
     padding: '6px 16px',
     borderRadius: 12,
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
     fontSize: 13,
     fontWeight: 'bold',
   },

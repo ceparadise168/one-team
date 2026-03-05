@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
-import { useSessionBookings, useAdminCancelBooking } from './use-massage';
+import { useSessionBookings, useAdminCancelBooking, useExecuteDraw } from './use-massage';
 import type { MassageBooking } from './use-massage';
 
-function formatTime(isoString: string): string {
-  const d = new Date(isoString);
-  return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 }
 
 function getStatusBadge(status: MassageBooking['status']): { label: string; style: React.CSSProperties } {
   switch (status) {
     case 'CONFIRMED':
-      return { label: '已確認', style: styles.confirmedBadge };
+      return { label: '預約成功', style: styles.confirmedBadge };
     case 'REGISTERED':
-      return { label: '已登記', style: styles.registeredBadge };
+      return { label: '等待抽籤', style: styles.registeredBadge };
     case 'UNSUCCESSFUL':
       return { label: '未中籤', style: styles.unsuccessfulBadge };
     case 'CANCELLED':
@@ -31,6 +35,7 @@ export function SessionBookings() {
     sessionId!
   );
   const { cancel, loading: cancelling } = useAdminCancelBooking(apiBaseUrl, accessToken);
+  const { draw, loading: drawing } = useExecuteDraw(apiBaseUrl, accessToken);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   async function handleAdminCancel(bookingId: string) {
@@ -45,6 +50,23 @@ export function SessionBookings() {
     }
   }
 
+  async function handleDraw() {
+    const registeredCount = bookings.filter(b => b.status === 'REGISTERED').length;
+    if (!confirm(`確定要執行抽籤嗎？共 ${registeredCount} 人登記，將抽出 ${session?.quota ?? '?'} 名。`)) return;
+    try {
+      setActionMessage(null);
+      await draw(sessionId!);
+      setActionMessage('抽籤完成！已通知所有參與者。');
+      refresh();
+    } catch (e) {
+      setActionMessage((e as Error).message);
+    }
+  }
+
+  const registeredCount = bookings.filter(b => b.status === 'REGISTERED').length;
+  const confirmedCount = bookings.filter(b => b.status === 'CONFIRMED').length;
+  const canDraw = session?.mode === 'LOTTERY' && !session.drawnAt && registeredCount > 0;
+
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>場次預約明細</h1>
@@ -55,7 +77,6 @@ export function SessionBookings() {
         <p style={styles.error}>錯誤: {error}</p>
       ) : (
         <>
-          {/* Session details header */}
           {session && (
             <div style={styles.sessionCard}>
               <div style={styles.cardHeader}>
@@ -71,9 +92,31 @@ export function SessionBookings() {
               </p>
               <p style={styles.cardMeta}>{session.location}</p>
               <p style={styles.cardMeta}>
-                名額: {session.quota} | 模式: {session.mode === 'LOTTERY' ? '抽籤' : '先到先得'}
+                名額: {session.quota} · {session.mode === 'LOTTERY' ? '抽籤制' : '先到先得'}
+              </p>
+              {session.mode === 'LOTTERY' && session.drawAt && (
+                <p style={styles.cardMeta}>
+                  抽籤時間: {formatDateTime(session.drawAt)}
+                  {session.drawnAt && ` (已於 ${formatDateTime(session.drawnAt)} 執行)`}
+                </p>
+              )}
+              <p style={styles.statsRow}>
+                {session.mode === 'LOTTERY'
+                  ? `登記: ${registeredCount} 人 · 中籤: ${confirmedCount} 人`
+                  : `已預約: ${confirmedCount} / ${session.quota} 人`}
               </p>
             </div>
+          )}
+
+          {/* Draw button for LOTTERY mode */}
+          {canDraw && (
+            <button
+              style={styles.drawBtn}
+              disabled={drawing}
+              onClick={handleDraw}
+            >
+              {drawing ? '抽籤中...' : `執行抽籤（${registeredCount} 人登記）`}
+            </button>
           )}
 
           {actionMessage && <p style={styles.message}>{actionMessage}</p>}
@@ -94,7 +137,7 @@ export function SessionBookings() {
                       <span style={badge.style}>{badge.label}</span>
                     </div>
                     <p style={styles.cardMeta}>
-                      預約時間: {new Date(bk.createdAt).toLocaleString('zh-TW')}
+                      登記時間: {new Date(bk.createdAt).toLocaleString('zh-TW')}
                     </p>
                     {bk.cancelledAt && (
                       <p style={styles.cardMeta}>
@@ -152,7 +195,25 @@ const styles: Record<string, React.CSSProperties> = {
   cardDate: { fontSize: 16, fontWeight: 'bold' },
   cardTime: { margin: '4px 0', fontSize: 14, color: '#333' },
   cardMeta: { margin: '4px 0', fontSize: 13, color: '#666' },
+  statsRow: {
+    margin: '8px 0 0 0',
+    fontSize: 14,
+    color: '#1DB446',
+    fontWeight: 'bold',
+  },
   employeeId: { fontSize: 15, fontWeight: 'bold' },
+  drawBtn: {
+    width: '100%',
+    padding: '12px 0',
+    backgroundColor: '#e65100',
+    color: 'white',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginBottom: 8,
+  },
   activeBadge: {
     padding: '2px 10px',
     borderRadius: 12,

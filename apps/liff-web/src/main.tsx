@@ -14,6 +14,7 @@ import { SessionList } from './features/massage/session-list';
 import { AdminSessions } from './features/massage/admin-sessions';
 import { CreateSession } from './features/massage/create-session';
 import { SessionBookings } from './features/massage/session-bookings';
+import { AuthGuard } from './auth-guard';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
@@ -32,18 +33,18 @@ function App() {
               <RegistrationForm apiBaseUrl={apiBaseUrl} liffId={liffId} tenantId={tenantId} />
             }
           />
-          <Route path="/digital-id" element={<DigitalIdCard />} />
-          <Route path="/volunteer" element={<ActivityList />} />
-          <Route path="/volunteer/create" element={<CreateActivity />} />
-          <Route path="/volunteer/:activityId" element={<ActivityDetail />} />
-          <Route path="/volunteer/:activityId/report" element={<Report />} />
-          <Route path="/volunteer/:activityId/scan" element={<CheckIn mode="organizer" />} />
-          <Route path="/volunteer/:activityId/check-in" element={<CheckIn mode="self" />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/massage" element={<SessionList />} />
-          <Route path="/massage/admin" element={<AdminSessions />} />
-          <Route path="/massage/admin/create" element={<CreateSession />} />
-          <Route path="/massage/admin/sessions/:sessionId" element={<SessionBookings />} />
+          <Route path="/digital-id" element={<AuthGuard><DigitalIdCard /></AuthGuard>} />
+          <Route path="/volunteer" element={<AuthGuard><ActivityList /></AuthGuard>} />
+          <Route path="/volunteer/create" element={<AuthGuard><CreateActivity /></AuthGuard>} />
+          <Route path="/volunteer/:activityId" element={<AuthGuard><ActivityDetail /></AuthGuard>} />
+          <Route path="/volunteer/:activityId/report" element={<AuthGuard><Report /></AuthGuard>} />
+          <Route path="/volunteer/:activityId/scan" element={<AuthGuard><CheckIn mode="organizer" /></AuthGuard>} />
+          <Route path="/volunteer/:activityId/check-in" element={<AuthGuard><CheckIn mode="self" /></AuthGuard>} />
+          <Route path="/admin" element={<AuthGuard><AdminPage /></AuthGuard>} />
+          <Route path="/massage" element={<AuthGuard><SessionList /></AuthGuard>} />
+          <Route path="/massage/admin" element={<AuthGuard><AdminSessions /></AuthGuard>} />
+          <Route path="/massage/admin/create" element={<AuthGuard><CreateSession /></AuthGuard>} />
+          <Route path="/massage/admin/sessions/:sessionId" element={<AuthGuard><SessionBookings /></AuthGuard>} />
           <Route
             path="/"
             element={

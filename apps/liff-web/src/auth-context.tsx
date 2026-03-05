@@ -1,14 +1,21 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
+export type AuthStatus = 'authenticated' | 'expired' | 'none';
+
 interface AuthContextValue {
   accessToken: string;
   employeeId: string;
   tenantId: string;
   apiBaseUrl: string;
+  authStatus: AuthStatus;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const STORAGE_KEY_REFRESH = 'one_team_refresh_token';
+const STORAGE_KEY_ACCESS = 'one_team_access_token';
+const STORAGE_KEY_TENANT = 'one_team_tenant_id';
 
 function parseJwtPayload(jwt: string): Record<string, unknown> | null {
   try {
@@ -37,6 +44,44 @@ function getTokenExpSeconds(accessToken: string): number | null {
   return null;
 }
 
+function isTokenExpired(accessToken: string): boolean {
+  const exp = getTokenExpSeconds(accessToken);
+  if (!exp) return true;
+  return Math.floor(Date.now() / 1000) >= exp;
+}
+
+/** Read initial tokens: URL params take priority, then sessionStorage */
+function getInitialTokens(): { accessToken: string; refreshToken: string; tenantId: string } {
+  const params = new URLSearchParams(window.location.search);
+  const urlAccess = params.get('accessToken') ?? '';
+  const urlRefresh = params.get('refreshToken') ?? '';
+  const urlTenant = params.get('tenantId') ?? '';
+
+  if (urlAccess) {
+    // Fresh tokens from URL — persist to sessionStorage
+    try {
+      sessionStorage.setItem(STORAGE_KEY_ACCESS, urlAccess);
+      if (urlRefresh) sessionStorage.setItem(STORAGE_KEY_REFRESH, urlRefresh);
+      if (urlTenant) sessionStorage.setItem(STORAGE_KEY_TENANT, urlTenant);
+    } catch { /* private browsing */ }
+
+    // Clean URL params to avoid leaking tokens in history
+    const url = new URL(window.location.href);
+    url.searchParams.delete('accessToken');
+    url.searchParams.delete('refreshToken');
+    url.searchParams.delete('tenantId');
+    window.history.replaceState({}, '', url.toString());
+
+    return { accessToken: urlAccess, refreshToken: urlRefresh, tenantId: urlTenant };
+  }
+
+  // Fallback: restore from sessionStorage (survives F5 refresh)
+  const storedAccess = sessionStorage.getItem(STORAGE_KEY_ACCESS) ?? '';
+  const storedRefresh = sessionStorage.getItem(STORAGE_KEY_REFRESH) ?? '';
+  const storedTenant = sessionStorage.getItem(STORAGE_KEY_TENANT) ?? '';
+  return { accessToken: storedAccess, refreshToken: storedRefresh, tenantId: storedTenant };
+}
+
 export function AuthProvider({
   children,
   apiBaseUrl,
@@ -44,13 +89,14 @@ export function AuthProvider({
   children: ReactNode;
   apiBaseUrl: string;
 }) {
-  const params = new URLSearchParams(window.location.search);
-  const initialAccessToken = params.get('accessToken') ?? '';
-  const tenantId = params.get('tenantId') ?? '';
-  const initialRefreshToken = params.get('refreshToken') ?? '';
+  const initial = getInitialTokens();
 
-  const [accessToken, setAccessToken] = useState(initialAccessToken);
-  const refreshTokenRef = useRef(initialRefreshToken);
+  const [accessToken, setAccessToken] = useState(initial.accessToken);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(
+    initial.accessToken ? (isTokenExpired(initial.accessToken) ? 'expired' : 'authenticated') : 'none'
+  );
+  const tenantId = initial.tenantId;
+  const refreshTokenRef = useRef(initial.refreshToken);
   const refreshingRef = useRef(false);
 
   const employeeId = extractEmployeeId(accessToken);
@@ -67,7 +113,11 @@ export function AuthProvider({
         body: JSON.stringify({ refreshToken: rt }),
       });
 
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Refresh failed — mark as expired
+        setAuthStatus('expired');
+        return;
+      }
 
       const data = (await res.json()) as {
         accessToken: string;
@@ -75,12 +125,29 @@ export function AuthProvider({
       };
       setAccessToken(data.accessToken);
       refreshTokenRef.current = data.refreshToken;
+      setAuthStatus('authenticated');
+
+      // Persist new tokens
+      try {
+        sessionStorage.setItem(STORAGE_KEY_ACCESS, data.accessToken);
+        sessionStorage.setItem(STORAGE_KEY_REFRESH, data.refreshToken);
+      } catch { /* private browsing */ }
     } catch {
-      // Refresh failed — token stays stale until next attempt
+      setAuthStatus('expired');
     } finally {
       refreshingRef.current = false;
     }
   }, [apiBaseUrl]);
+
+  // On mount: if access token is expired but we have refresh token, try refresh immediately
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    if (accessToken && isTokenExpired(accessToken) && refreshTokenRef.current) {
+      void refreshAccessToken();
+    }
+  }, [accessToken, refreshAccessToken]);
 
   // Schedule proactive refresh before expiry
   useEffect(() => {
@@ -100,7 +167,7 @@ export function AuthProvider({
     return () => clearTimeout(timer);
   }, [accessToken, refreshAccessToken]);
 
-  const value = { accessToken, employeeId, tenantId, apiBaseUrl };
+  const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

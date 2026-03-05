@@ -298,3 +298,36 @@ export function useAdminCancelBooking(apiBaseUrl: string, accessToken: string) {
 
   return { cancel, loading, error };
 }
+
+export function useExecuteDraw(apiBaseUrl: string, accessToken: string) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const draw = useCallback(
+    async (sessionId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/draw`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || '抽籤失敗');
+        }
+      } catch (e) {
+        setError((e as Error).message);
+        throw e;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiBaseUrl, accessToken]
+  );
+
+  return { draw, loading, error };
+}

@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type {
   CampingTripRecord,
   TripParticipantRecord,
@@ -12,7 +12,7 @@ function stripMetadata<T>(item: Record<string, unknown> | undefined): T | null {
   if (!item) return null;
   const rest = Object.fromEntries(
     Object.entries(item).filter(
-      ([key]) => !['pk', 'sk', 'entityType', 'gsi_employee', 'gsi_date', 'employee_id', 'registered_at'].includes(key),
+      ([key]) => !['pk', 'sk', 'entityType'].includes(key),
     ),
   );
   return rest as T;
@@ -50,14 +50,12 @@ export class DynamoDbCampingRepository implements CampingRepository {
   }
 
   async listTripsByParticipantEmployeeId(tenantId: string, employeeId: string): Promise<CampingTripRecord[]> {
-    const result = await this.client.send(new QueryCommand({
+    const result = await this.client.send(new ScanCommand({
       TableName: this.tableName,
-      IndexName: 'gsi-employee',
-      KeyConditionExpression: 'employee_id = :empId',
-      FilterExpression: 'entityType = :type',
+      FilterExpression: 'entityType = :type AND employeeId = :empId',
       ExpressionAttributeValues: {
-        ':empId': employeeId,
         ':type': 'CAMPING_PARTICIPANT',
+        ':empId': employeeId,
       },
     }));
     const tripIds = (result.Items ?? []).map(item => (item as Record<string, unknown>).tripId as string);
@@ -77,8 +75,6 @@ export class DynamoDbCampingRepository implements CampingRepository {
         pk: `CAMPING_TRIP#${participant.tripId}`,
         sk: `PARTICIPANT#${participant.participantId}`,
         entityType: 'CAMPING_PARTICIPANT',
-        employee_id: participant.employeeId ?? undefined,
-        registered_at: new Date().toISOString(),
         ...participant,
       },
     }));

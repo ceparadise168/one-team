@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import {
   useMassageSessions,
@@ -116,7 +117,10 @@ export function SessionList() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>按摩預約</h1>
+      <div style={styles.headerRow}>
+        <h1 style={styles.title}>按摩預約</h1>
+        <Link to="/massage/admin" style={styles.adminLink}>管理</Link>
+      </div>
 
       {/* Tab bar */}
       <div style={styles.tabBar}>
@@ -222,7 +226,22 @@ export function SessionList() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
-  title: { fontSize: 22, margin: '0 0 16px 0' },
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  title: { fontSize: 22, margin: 0 },
+  adminLink: {
+    padding: '6px 14px',
+    backgroundColor: '#f5f5f5',
+    color: '#333',
+    borderRadius: 8,
+    textDecoration: 'none',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   tabBar: {
     display: 'flex',
     gap: 0,

@@ -12,7 +12,7 @@ function stripMetadata<T>(item: Record<string, unknown> | undefined): T | null {
   if (!item) return null;
   const rest = Object.fromEntries(
     Object.entries(item).filter(
-      ([key]) => !['pk', 'sk', 'entityType', 'gsi_employee', 'gsi_date'].includes(key),
+      ([key]) => !['pk', 'sk', 'entityType', 'gsi_employee', 'gsi_date', 'employee_id', 'registered_at'].includes(key),
     ),
   );
   return rest as T;
@@ -52,8 +52,8 @@ export class DynamoDbCampingRepository implements CampingRepository {
   async listTripsByParticipantEmployeeId(tenantId: string, employeeId: string): Promise<CampingTripRecord[]> {
     const result = await this.client.send(new QueryCommand({
       TableName: this.tableName,
-      IndexName: 'gsi-line-user',
-      KeyConditionExpression: 'gsi_employee = :empId',
+      IndexName: 'gsi-employee',
+      KeyConditionExpression: 'employee_id = :empId',
       FilterExpression: 'entityType = :type',
       ExpressionAttributeValues: {
         ':empId': employeeId,
@@ -77,7 +77,8 @@ export class DynamoDbCampingRepository implements CampingRepository {
         pk: `CAMPING_TRIP#${participant.tripId}`,
         sk: `PARTICIPANT#${participant.participantId}`,
         entityType: 'CAMPING_PARTICIPANT',
-        gsi_employee: participant.employeeId ?? undefined,
+        employee_id: participant.employeeId ?? undefined,
+        registered_at: new Date().toISOString(),
         ...participant,
       },
     }));

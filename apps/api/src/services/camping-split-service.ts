@@ -219,8 +219,11 @@ export class CampingSplitService {
     await this.repo.deleteExpense(tripId, expenseId);
   }
 
-  async settle(tripId: string, callerEmployeeId: string): Promise<SettlementRecord> {
+  async settle(tripId: string, callerEmployeeId: string, callerTenantId?: string): Promise<SettlementRecord> {
     const trip = await this.getTrip(tripId);
+    if (callerTenantId && trip.tenantId !== callerTenantId) {
+      throw new ForbiddenError('Cannot access trip from different tenant');
+    }
     if (trip.creatorEmployeeId !== callerEmployeeId) {
       throw new ForbiddenError('Only the trip creator can settle');
     }
@@ -254,8 +257,11 @@ export class CampingSplitService {
     return this.repo.findSettlement(tripId);
   }
 
-  async getTripDetail(tripId: string) {
+  async getTripDetail(tripId: string, callerTenantId?: string) {
     const trip = await this.getTrip(tripId);
+    if (callerTenantId && trip.tenantId !== callerTenantId) {
+      throw new ForbiddenError('Cannot access trip from different tenant');
+    }
     const participants = await this.repo.listParticipants(tripId);
     const campSites = await this.repo.listCampSites(tripId);
     const expenses = await this.repo.listExpenses(tripId);
@@ -263,11 +269,30 @@ export class CampingSplitService {
     return { trip, participants, campSites, expenses, settlement };
   }
 
-  private async requireOpen(tripId: string): Promise<void> {
+  async getPublicSummary(tripId: string) {
     const trip = await this.getTrip(tripId);
+    const participants = await this.repo.listParticipants(tripId);
+    const settlement = await this.repo.findSettlement(tripId);
+    const participantNames: Record<string, string> = {};
+    for (const p of participants) {
+      participantNames[p.participantId] = p.name;
+    }
+    return {
+      trip: { title: trip.title, startDate: trip.startDate, endDate: trip.endDate, status: trip.status },
+      participantNames,
+      settlement,
+    };
+  }
+
+  private async requireOpen(tripId: string, callerTenantId?: string): Promise<CampingTripRecord> {
+    const trip = await this.getTrip(tripId);
+    if (callerTenantId && trip.tenantId !== callerTenantId) {
+      throw new ForbiddenError('Cannot access trip from different tenant');
+    }
     if (trip.status !== 'OPEN') {
       throw new ValidationError('Trip is already settled — cannot modify');
     }
+    return trip;
   }
 
   private async sendSettlementNotifications(

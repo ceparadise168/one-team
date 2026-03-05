@@ -1172,8 +1172,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingTripDetailMatch) {
       const tripId = campingTripDetailMatch[1];
       if (method === 'GET') {
-        await requireEmployeePrincipal({ event, authSessionService });
-        const detail = await campingSplitService.getTripDetail(tripId);
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const detail = await campingSplitService.getTripDetail(tripId, principal.tenantId);
         return jsonResponse(200, detail, responseOptions);
       }
     }
@@ -1276,7 +1276,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingSettleMatch && method === 'POST') {
       const tripId = campingSettleMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const settlement = await campingSplitService.settle(tripId, principal.employeeId);
+      const settlement = await campingSplitService.settle(tripId, principal.employeeId, principal.tenantId);
       return jsonResponse(200, settlement, responseOptions);
     }
 
@@ -1292,8 +1292,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const campingSummaryMatch = path.match(/^\/v1\/public\/camping\/trips\/([^/]+)\/summary$/);
     if (campingSummaryMatch && method === 'GET') {
       const tripId = campingSummaryMatch[1];
-      const detail = await campingSplitService.getTripDetail(tripId);
-      return jsonResponse(200, detail, responseOptions);
+      const summary = await campingSplitService.getPublicSummary(tripId);
+      return jsonResponse(200, summary, responseOptions);
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);

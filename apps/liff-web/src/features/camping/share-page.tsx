@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import type { TripDetail } from './use-camping';
+import type { Settlement } from './use-camping';
 import type React from 'react';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
+interface PublicSummary {
+  trip: { title: string; startDate: string; endDate: string; status: string };
+  participantNames: Record<string, string>;
+  settlement: Settlement | null;
+}
+
 export function SharePage() {
   const { tripId } = useParams<{ tripId: string }>();
-  const [detail, setDetail] = useState<TripDetail | null>(null);
+  const [data, setData] = useState<PublicSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -15,17 +21,17 @@ export function SharePage() {
   useEffect(() => {
     fetch(`${apiBaseUrl}/v1/public/camping/trips/${tripId}/summary`)
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
-      .then(data => { setDetail(data); setError(null); })
+      .then(d => { setData(d); setError(null); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [tripId]);
 
   if (loading) return <div style={styles.container}><p style={styles.loading}>載入中...</p></div>;
   if (error) return <div style={styles.container}><p style={styles.error}>{error}</p></div>;
-  if (!detail) return <div style={styles.container}><p style={styles.error}>找不到行程</p></div>;
+  if (!data) return <div style={styles.container}><p style={styles.error}>找不到行程</p></div>;
 
-  const { trip, participants, settlement } = detail;
-  const nameOf = new Map(participants.map(p => [p.participantId, p.name]));
+  const { trip, participantNames, settlement } = data;
+  const nameOf = new Map(Object.entries(participantNames));
 
   return (
     <div style={styles.container}>
@@ -46,7 +52,6 @@ export function SharePage() {
             已結算 ({new Date(settlement.settledAt).toLocaleDateString('zh-TW')})
           </div>
 
-          {/* Transfer instructions */}
           <div style={styles.sectionTitle}>轉帳指示</div>
           {settlement.transfers.length === 0 && (
             <p style={styles.noTransfers}>所有人已結清</p>
@@ -60,7 +65,6 @@ export function SharePage() {
             </div>
           ))}
 
-          {/* Per-person breakdown */}
           <div style={styles.sectionTitle}>個人明細</div>
           {settlement.participantSummaries.map(s => {
             const isExpanded = expandedId === s.participantId;

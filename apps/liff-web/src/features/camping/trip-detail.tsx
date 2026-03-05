@@ -24,6 +24,7 @@ export function TripDetail() {
   const { detail, loading, error, refresh } = useTripDetail(apiBaseUrl, accessToken, tripId!);
   const mutations = useTripMutations(apiBaseUrl, accessToken, tripId!);
   const [activeTab, setActiveTab] = useState<Tab>('participants');
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   if (loading) return <div style={styles.container}><p style={styles.loading}>載入中...</p></div>;
   if (error) return <div style={styles.container}><p style={styles.error}>{error}</p></div>;
@@ -32,7 +33,15 @@ export function TripDetail() {
   const isOpen = detail.trip.status === 'OPEN';
 
   const withRefresh = (fn: (...args: any[]) => Promise<any>) =>
-    async (...args: any[]) => { await fn(...args); refresh(); };
+    async (...args: any[]) => {
+      try {
+        setMutationError(null);
+        await fn(...args);
+        refresh();
+      } catch (err) {
+        setMutationError((err as Error).message);
+      }
+    };
 
   return (
     <div style={styles.container}>
@@ -58,6 +67,10 @@ export function TripDetail() {
           </button>
         ))}
       </div>
+
+      {mutationError && (
+        <div style={styles.mutationError}>{mutationError}</div>
+      )}
 
       {/* Tab content */}
       <div style={styles.tabContent}>
@@ -144,4 +157,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#1DB446', borderBottom: '2px solid #1DB446',
   },
   tabContent: { minHeight: 200 },
+  mutationError: {
+    padding: '8px 12px', backgroundColor: '#ffebee', color: '#c62828',
+    borderRadius: 8, fontSize: 13, marginBottom: 12,
+  },
 };

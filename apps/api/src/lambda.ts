@@ -67,6 +67,7 @@ import { TenantOnboardingService } from './services/tenant-onboarding-service.js
 import { AdminAuthService } from './services/admin-auth-service.js';
 import { SelfRegistrationService } from './services/self-registration-service.js';
 import { MassageBookingService } from './services/massage-booking-service.js';
+import { generateSlots } from './domain/massage-booking.js';
 import { InMemoryMassageBookingRepository } from './repositories/massage-booking-repository.js';
 import { DynamoDbMassageBookingRepository } from './repositories/dynamodb-massage-booking-repository.js';
 import { VolunteerService } from './services/volunteer-service.js';
@@ -986,6 +987,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           drawAt: (body.drawAt as string) ?? null,
           drawMode: (body.drawMode as 'AUTO' | 'MANUAL') ?? undefined,
           createdByEmployeeId: principal.employeeId,
+          slotDurationMinutes: (body.slotDurationMinutes as number) ?? undefined,
+          therapistCount: (body.therapistCount as number) ?? undefined,
         });
         return jsonResponse(201, result, responseOptions);
       }
@@ -1012,12 +1015,36 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, { ok: true }, responseOptions);
     }
 
+    // Session slots
+    const massageSlotsMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/slots$/);
+    if (massageSlotsMatch && method === 'GET') {
+      const sessionId = massageSlotsMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const session = await massageBookingService.getSession(principal.tenantId, sessionId);
+      const slotTimes = generateSlots(session);
+      const slots = await Promise.all(slotTimes.map(async (startAt) => {
+        const confirmed = await massageBookingRepository.countConfirmedBySlot(principal.tenantId, sessionId, startAt);
+        const waitlisted = await massageBookingRepository.listWaitlistedBySlot(principal.tenantId, sessionId, startAt);
+        return {
+          startAt,
+          confirmed,
+          waitlisted: waitlisted.length,
+          capacity: session.therapistCount ?? 1,
+        };
+      }));
+      return jsonResponse(200, { slots }, responseOptions);
+    }
+
     // Book session
     const massageBookMatch = path.match(/^\/v1\/massage\/sessions\/([^/]+)\/book$/);
     if (massageBookMatch && method === 'POST') {
       const sessionId = massageBookMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const result = await massageBookingService.bookSession(principal.tenantId, sessionId, principal.employeeId, principal.lineUserId);
+      const body = parseBody(event) as Record<string, unknown>;
+      const result = await massageBookingService.bookSession(
+        principal.tenantId, sessionId, principal.employeeId, principal.lineUserId,
+        { slotStartAt: body.slotStartAt as string | undefined }
+      );
       return jsonResponse(201, result, responseOptions);
     }
 

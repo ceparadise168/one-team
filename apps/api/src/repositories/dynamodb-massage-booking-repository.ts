@@ -73,13 +73,14 @@ export class DynamoDbMassageBookingRepository implements MassageBookingRepositor
   async listSessionsDueForDraw(now: string): Promise<MassageSessionRecord[]> {
     const result = await this.client.send(new ScanCommand({
       TableName: this.tableName,
-      FilterExpression: 'entityType = :et AND #m = :lottery AND #s = :active AND drawAt <= :now AND attribute_not_exists(drawnAt)',
+      FilterExpression: 'entityType = :et AND #m = :lottery AND #s = :active AND drawAt <= :now AND (attribute_not_exists(drawnAt) OR attribute_type(drawnAt, :nullType))',
       ExpressionAttributeNames: { '#m': 'mode', '#s': 'status' },
       ExpressionAttributeValues: {
         ':et': 'MASSAGE_SESSION',
         ':lottery': 'LOTTERY',
         ':active': 'ACTIVE',
         ':now': now,
+        ':nullType': 'NULL',
       },
     }));
     return (result.Items ?? []).map(item => stripMetadata<MassageSessionRecord>(item as Record<string, unknown>)!);

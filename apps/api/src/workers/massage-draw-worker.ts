@@ -16,13 +16,16 @@ export async function handleScheduledDraw(
 ): Promise<void> {
   const now = new Date().toISOString();
   const sessions = await deps.massageRepo.listSessionsDueForDraw(now);
+  console.log(`[massage-draw] now=${now}, found ${sessions.length} sessions due for draw`);
 
   for (const session of sessions) {
     try {
       const drawMode = session.drawMode ?? 'AUTO';
 
+      console.log(`[massage-draw] processing session ${session.sessionId}, drawMode=${drawMode}`);
       if (drawMode === 'AUTO') {
         await deps.massageService.executeDraw(session.tenantId, session.sessionId);
+        console.log(`[massage-draw] auto-draw completed for session ${session.sessionId}`);
       } else {
         // MANUAL: notify the admin who created this session
         const admin = await deps.employeeRepo.findByEmployeeId(session.tenantId, session.createdByEmployeeId);

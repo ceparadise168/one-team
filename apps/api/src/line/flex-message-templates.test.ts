@@ -126,15 +126,16 @@ describe('buildDigitalIdFlexMessage', () => {
 });
 
 describe('buildServicesMenuFlexMessage', () => {
-  it('returns carousel with digital-id + 5 services for non-admin', () => {
+  it('returns carousel with digital-id + services for non-admin', () => {
     const msg = buildServicesMenuFlexMessage();
     assert.equal(msg.type, 'flex');
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    // 1 (員工證) + 6 (services) = 7
-    assert.equal(contents.contents.length, 7);
+    // 1 (員工證) + 7 (services including camping) = 8
+    assert.equal(contents.contents.length, 8);
     const json = JSON.stringify(contents);
     assert.ok(json.includes('志工活動'));
+    assert.ok(json.includes('露營分帳'));
     assert.ok(json.includes('uri'));
   });
 
@@ -142,9 +143,9 @@ describe('buildServicesMenuFlexMessage', () => {
     const msg = buildServicesMenuFlexMessage({ isAdmin: true });
     const contents = msg.contents as { type: string; contents: unknown[] };
     assert.equal(contents.type, 'carousel');
-    // 1 (員工證) + 6 (services) + 1 (管理後台) = 8
-    assert.equal(contents.contents.length, 8);
-    const lastBubble = contents.contents[7];
+    // 1 (員工證) + 7 (services) + 1 (管理後台) = 9
+    assert.equal(contents.contents.length, 9);
+    const lastBubble = contents.contents[8];
     const json = JSON.stringify(lastBubble);
     assert.ok(json.includes('管理後台'));
     assert.ok(json.includes('"type":"uri"'));

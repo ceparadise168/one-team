@@ -546,11 +546,12 @@ export function buildServicesMenuFlexMessage(options?: {
   refreshToken?: string;
 }): LineMessage {
   const liffWebBase = options?.liffWebBaseUrl ?? 'https://miniapp.line.me/';
-  const enabledServices = ['volunteer', 'massage'];
+  const enabledServices = ['volunteer', 'massage', 'camping'];
 
   const allServices = [
     { id: 'volunteer', label: '志工活動', desc: '查詢與報名志工活動', path: '/volunteer' },
     { id: 'massage', label: '按摩預約', desc: '預約公司按摩服務', path: '/massage' },
+    { id: 'camping', label: '露營分帳', desc: '露營費用分攤計算', path: '/camping' },
     { id: 'voting', label: '投票', desc: '參與公司投票', path: '/voting' },
     { id: 'packages', label: '包裹簽收', desc: '簽收包裹通知', path: '/packages' },
     { id: 'repair', label: '總務報修', desc: '提交報修申請', path: '/repair' },

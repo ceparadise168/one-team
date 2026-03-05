@@ -16,6 +16,8 @@ export interface MassageBookingRepository {
   listBookingsBySession(tenantId: string, sessionId: string): Promise<MassageBookingRecord[]>;
   listBookingsByEmployee(tenantId: string, employeeId: string): Promise<MassageBookingRecord[]>;
   countConfirmedBookings(tenantId: string, sessionId: string): Promise<number>;
+  countConfirmedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<number>;
+  listWaitlistedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<MassageBookingRecord[]>;
 }
 
 export class InMemoryMassageBookingRepository implements MassageBookingRepository {
@@ -88,5 +90,19 @@ export class InMemoryMassageBookingRepository implements MassageBookingRepositor
     return this.bookings.filter(
       b => b.tenantId === tenantId && b.sessionId === sessionId && b.status === 'CONFIRMED'
     ).length;
+  }
+
+  async countConfirmedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<number> {
+    return this.bookings.filter(
+      b => b.tenantId === tenantId && b.sessionId === sessionId
+        && b.slotStartAt === slotStartAt && b.status === 'CONFIRMED'
+    ).length;
+  }
+
+  async listWaitlistedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<MassageBookingRecord[]> {
+    return this.bookings
+      .filter(b => b.tenantId === tenantId && b.sessionId === sessionId
+        && b.slotStartAt === slotStartAt && b.status === 'WAITLISTED')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 }

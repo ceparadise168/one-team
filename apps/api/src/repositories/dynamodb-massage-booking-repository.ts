@@ -202,4 +202,39 @@ export class DynamoDbMassageBookingRepository implements MassageBookingRepositor
     }));
     return result.Count ?? 0;
   }
+
+  async countConfirmedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<number> {
+    const result = await this.client.send(new QueryCommand({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      FilterExpression: '#s = :confirmed AND slotStartAt = :slot',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':pk': `TENANT#${tenantId}`,
+        ':prefix': `MASSAGE_BOOKING#${sessionId}#`,
+        ':confirmed': 'CONFIRMED',
+        ':slot': slotStartAt,
+      },
+      Select: 'COUNT',
+    }));
+    return result.Count ?? 0;
+  }
+
+  async listWaitlistedBySlot(tenantId: string, sessionId: string, slotStartAt: string): Promise<MassageBookingRecord[]> {
+    const result = await this.client.send(new QueryCommand({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      FilterExpression: '#s = :waitlisted AND slotStartAt = :slot',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':pk': `TENANT#${tenantId}`,
+        ':prefix': `MASSAGE_BOOKING#${sessionId}#`,
+        ':waitlisted': 'WAITLISTED',
+        ':slot': slotStartAt,
+      },
+    }));
+    return (result.Items ?? [])
+      .map(item => stripMetadata<MassageBookingRecord>(item as Record<string, unknown>)!)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
 }

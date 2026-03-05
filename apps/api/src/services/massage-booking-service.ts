@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MassageSessionRecord, MassageSessionMode, MassageDrawMode, MassageBookingRecord } from '../domain/massage-booking.js';
+import type { MassageSessionRecord, MassageSessionMode, MassageDrawMode, MassageBookingRecord, MassageScheduleRecord, MassageScheduleStatus } from '../domain/massage-booking.js';
 import { generateSlots } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from '../repositories/massage-booking-repository.js';
 import type { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
@@ -26,6 +26,27 @@ interface CreateSessionInput {
   createdByEmployeeId: string;
 }
 
+interface CreateScheduleInput {
+  tenantId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  location: string;
+  slotDurationMinutes?: number;
+  therapistCount?: number;
+  mode: MassageSessionMode;
+  drawMode?: MassageDrawMode;
+  drawLeadMinutes?: number;
+  openLeadDays?: number;
+  timezone?: string;
+  createdByEmployeeId: string;
+}
+
+function localTimeToISO(date: string, time: string, _timezone: string): string {
+  // For Asia/Taipei (+08:00), convert "2026-03-12" + "12:00" → "2026-03-12T04:00:00.000Z"
+  return new Date(`${date}T${time}:00+08:00`).toISOString();
+}
+
 export class MassageBookingService {
   constructor(
     private readonly massageRepo: MassageBookingRepository,
@@ -36,7 +57,10 @@ export class MassageBookingService {
 
   async createSession(input: CreateSessionInput): Promise<{ sessionId: string }> {
     await this.requireManageBookingPermission(input.tenantId, input.createdByEmployeeId);
+    return this.createSessionRecord(input);
+  }
 
+  private async createSessionRecord(input: CreateSessionInput): Promise<{ sessionId: string }> {
     if (input.mode === 'LOTTERY' && !input.drawAt) {
       throw new ValidationError('drawAt is required for LOTTERY mode');
     }
@@ -271,6 +295,115 @@ export class MassageBookingService {
   async listSessionBookings(tenantId: string, sessionId: string, requestedBy: string): Promise<MassageBookingRecord[]> {
     await this.requireManageBookingPermission(tenantId, requestedBy);
     return this.massageRepo.listBookingsBySession(tenantId, sessionId);
+  }
+
+  // ─── Recurring Schedule Methods ──────────────────────────────────────
+
+  async createSchedule(input: CreateScheduleInput): Promise<{ scheduleId: string }> {
+    await this.requireManageBookingPermission(input.tenantId, input.createdByEmployeeId);
+
+    const scheduleId = randomUUID().slice(0, 8);
+    const schedule: MassageScheduleRecord = {
+      tenantId: input.tenantId,
+      scheduleId,
+      dayOfWeek: input.dayOfWeek,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      location: input.location,
+      slotDurationMinutes: input.slotDurationMinutes ?? 20,
+      therapistCount: input.therapistCount ?? 1,
+      mode: input.mode,
+      drawMode: input.drawMode ?? 'AUTO',
+      drawLeadMinutes: input.drawLeadMinutes ?? 60,
+      openLeadDays: input.openLeadDays ?? 7,
+      timezone: input.timezone ?? 'Asia/Taipei',
+      status: 'ACTIVE',
+      createdByEmployeeId: input.createdByEmployeeId,
+      createdAt: this.options.now().toISOString(),
+    };
+
+    await this.massageRepo.createSchedule(schedule);
+    return { scheduleId };
+  }
+
+  async listSchedules(tenantId: string, requestedBy: string): Promise<MassageScheduleRecord[]> {
+    await this.requireManageBookingPermission(tenantId, requestedBy);
+    return this.massageRepo.listSchedules(tenantId);
+  }
+
+  async toggleSchedule(tenantId: string, scheduleId: string, requestedBy: string): Promise<{ status: MassageScheduleStatus }> {
+    await this.requireManageBookingPermission(tenantId, requestedBy);
+
+    const schedule = await this.massageRepo.findScheduleById(tenantId, scheduleId);
+    if (!schedule) throw new NotFoundError('Schedule not found');
+
+    schedule.status = schedule.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    await this.massageRepo.updateSchedule(schedule);
+
+    return { status: schedule.status };
+  }
+
+  async generateScheduledSessions(tenantId: string, targetDate: string): Promise<number> {
+    const schedules = await this.massageRepo.listSchedules(tenantId);
+    const activeSchedules = schedules.filter(s => s.status === 'ACTIVE');
+
+    // Determine day of week for target date
+    const targetDayOfWeek = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
+
+    // Get existing sessions for dedup check
+    const existingSessions = await this.massageRepo.listActiveSessions(tenantId, targetDate);
+
+    let created = 0;
+
+    for (const schedule of activeSchedules) {
+      if (schedule.dayOfWeek !== targetDayOfWeek) continue;
+
+      // Check if session already exists for this date + location
+      const duplicate = existingSessions.find(
+        s => s.date === targetDate && s.location === schedule.location
+      );
+      if (duplicate) continue;
+
+      const startAt = localTimeToISO(targetDate, schedule.startTime, schedule.timezone);
+      const endAt = localTimeToISO(targetDate, schedule.endTime, schedule.timezone);
+
+      // Calculate openAt: targetDate - openLeadDays at midnight UTC
+      const openDate = new Date(`${targetDate}T00:00:00Z`);
+      openDate.setUTCDate(openDate.getUTCDate() - schedule.openLeadDays);
+      const openAt = openDate.toISOString();
+
+      // Calculate drawAt for LOTTERY mode
+      let drawAt: string | null = null;
+      if (schedule.mode === 'LOTTERY') {
+        const startMs = new Date(startAt).getTime();
+        drawAt = new Date(startMs - schedule.drawLeadMinutes * 60 * 1000).toISOString();
+      }
+
+      // Calculate quota = therapistCount * slotCount
+      const durationMs = new Date(endAt).getTime() - new Date(startAt).getTime();
+      const slotCount = Math.floor(durationMs / (schedule.slotDurationMinutes * 60 * 1000));
+      const quota = schedule.therapistCount * slotCount;
+
+      await this.createSessionRecord({
+        tenantId,
+        date: targetDate,
+        startAt,
+        endAt,
+        location: schedule.location,
+        quota,
+        slotDurationMinutes: schedule.slotDurationMinutes,
+        therapistCount: schedule.therapistCount,
+        mode: schedule.mode,
+        openAt,
+        drawAt,
+        drawMode: schedule.drawMode,
+        createdByEmployeeId: schedule.createdByEmployeeId,
+      });
+
+      created++;
+    }
+
+    return created;
   }
 
   private async tryPromoteWaitlisted(tenantId: string, sessionId: string, slotStartAt: string): Promise<void> {

@@ -638,3 +638,188 @@ describe('MassageBookingService — Waitlist Auto-Promote', () => {
     assert.equal(emp2!.status, 'CONFIRMED');
   });
 });
+
+// ─── Recurring Schedule Tests ────────────────────────────────────────
+
+describe('MassageBookingService — Recurring Schedule', () => {
+  it('creates a recurring schedule', async () => {
+    const { service, massageRepo, employeeRepo } = createContext();
+    await seedAdmin(employeeRepo);
+
+    const result = await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3, // Wednesday
+      startTime: '12:00',
+      endTime: '15:00',
+      location: 'B1 按摩室',
+      slotDurationMinutes: 20,
+      therapistCount: 4,
+      mode: 'LOTTERY',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    assert.ok(result.scheduleId);
+    const stored = await massageRepo.findScheduleById(TENANT, result.scheduleId);
+    assert.ok(stored);
+    assert.equal(stored.dayOfWeek, 3);
+    assert.equal(stored.status, 'ACTIVE');
+    assert.equal(stored.openLeadDays, 7);
+  });
+
+  it('toggles schedule between ACTIVE and PAUSED', async () => {
+    const { service, employeeRepo } = createContext();
+    await seedAdmin(employeeRepo);
+
+    const { scheduleId } = await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3,
+      startTime: '12:00',
+      endTime: '15:00',
+      location: 'B1',
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    const result1 = await service.toggleSchedule(TENANT, scheduleId, 'ADMIN01');
+    assert.equal(result1.status, 'PAUSED');
+
+    const result2 = await service.toggleSchedule(TENANT, scheduleId, 'ADMIN01');
+    assert.equal(result2.status, 'ACTIVE');
+  });
+
+  it('lists schedules for tenant', async () => {
+    const { service, employeeRepo } = createContext();
+    await seedAdmin(employeeRepo);
+
+    await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3,
+      startTime: '12:00',
+      endTime: '15:00',
+      location: 'B1',
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    const schedules = await service.listSchedules(TENANT, 'ADMIN01');
+    assert.equal(schedules.length, 1);
+    assert.equal(schedules[0].dayOfWeek, 3);
+  });
+
+  it('generates session from active schedule for matching date', async () => {
+    // 2026-04-01 is a Wednesday (dayOfWeek=3)
+    const { service, massageRepo, employeeRepo } = createContext('2026-03-25T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+
+    await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3, // Wednesday
+      startTime: '12:00',
+      endTime: '13:00',
+      location: 'B1 按摩室',
+      slotDurationMinutes: 20,
+      therapistCount: 2,
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    const count = await service.generateScheduledSessions(TENANT, '2026-04-01');
+    assert.equal(count, 1);
+
+    const sessions = await massageRepo.listActiveSessions(TENANT, '2026-04-01');
+    const session = sessions.find(s => s.date === '2026-04-01');
+    assert.ok(session);
+    assert.equal(session.location, 'B1 按摩室');
+    assert.equal(session.therapistCount, 2);
+    assert.equal(session.slotDurationMinutes, 20);
+  });
+
+  it('does not duplicate sessions for same date', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-03-25T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+
+    await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3,
+      startTime: '12:00',
+      endTime: '13:00',
+      location: 'B1',
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    await service.generateScheduledSessions(TENANT, '2026-04-01');
+    const count2 = await service.generateScheduledSessions(TENANT, '2026-04-01');
+    assert.equal(count2, 0);
+
+    const sessions = await massageRepo.listActiveSessions(TENANT, '2026-04-01');
+    const matching = sessions.filter(s => s.date === '2026-04-01');
+    assert.equal(matching.length, 1);
+  });
+
+  it('paused schedule does not generate sessions', async () => {
+    const { service, employeeRepo } = createContext('2026-03-25T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+
+    const { scheduleId } = await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3,
+      startTime: '12:00',
+      endTime: '13:00',
+      location: 'B1',
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    await service.toggleSchedule(TENANT, scheduleId, 'ADMIN01');
+    const count = await service.generateScheduledSessions(TENANT, '2026-04-01');
+    assert.equal(count, 0);
+  });
+
+  it('skips non-matching day of week', async () => {
+    const { service, employeeRepo } = createContext('2026-03-25T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+
+    await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 1, // Monday
+      startTime: '12:00',
+      endTime: '13:00',
+      location: 'B1',
+      mode: 'FIRST_COME',
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    // 2026-04-01 is Wednesday, not Monday
+    const count = await service.generateScheduledSessions(TENANT, '2026-04-01');
+    assert.equal(count, 0);
+  });
+
+  it('generates LOTTERY session with correct drawAt', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-03-25T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+
+    await service.createSchedule({
+      tenantId: TENANT,
+      dayOfWeek: 3,
+      startTime: '12:00',
+      endTime: '13:00',
+      location: 'B1',
+      mode: 'LOTTERY',
+      drawLeadMinutes: 60, // 1 hour before
+      createdByEmployeeId: 'ADMIN01',
+    });
+
+    await service.generateScheduledSessions(TENANT, '2026-04-01');
+
+    const sessions = await massageRepo.listActiveSessions(TENANT, '2026-04-01');
+    const session = sessions.find(s => s.date === '2026-04-01');
+    assert.ok(session);
+    assert.equal(session.mode, 'LOTTERY');
+    assert.ok(session.drawAt);
+    // drawAt should be 1 hour before startAt
+    const startMs = new Date(session.startAt).getTime();
+    const drawMs = new Date(session.drawAt!).getTime();
+    assert.equal(startMs - drawMs, 60 * 60 * 1000);
+  });
+});

@@ -75,6 +75,9 @@ import { WebhookEventService } from './services/webhook-event-service.js';
 import { InMemoryAdminAccountRepository } from './repositories/admin-repository.js';
 import { InMemoryVolunteerRepository } from './repositories/volunteer-repository.js';
 import { DynamoDbVolunteerRepository } from './repositories/dynamodb-volunteer-repository.js';
+import { CampingSplitService } from './services/camping-split-service.js';
+import { InMemoryCampingRepository } from './repositories/camping-repository.js';
+import { DynamoDbCampingRepository } from './repositories/dynamodb-camping-repository.js';
 import { InMemoryWebhookEventRepository } from './repositories/webhook-event-repository.js';
 import { InMemoryAsyncJobDispatcher, SqsAsyncJobDispatcher, AsyncJobDispatcher } from './workers/async-job-dispatcher.js';
 import { createRequestLogger } from './logging/request-context.js';
@@ -443,6 +446,11 @@ const massageBookingService = new MassageBookingService(
   linePlatformClient,
   { now: () => new Date() }
 );
+
+const campingRepository = process.env.USE_DYNAMODB_REPOSITORIES === 'true'
+  ? new DynamoDbCampingRepository(dynamoDbClient!, process.env.MASSAGE_TABLE_NAME!)
+  : new InMemoryCampingRepository();
+const campingSplitService = new CampingSplitService(campingRepository, linePlatformClient, { now: () => new Date() });
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const startTime = Date.now();
@@ -1133,6 +1141,159 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const principal = await requireEmployeePrincipal({ event, authSessionService });
       const result = await massageBookingService.toggleSchedule(principal.tenantId, scheduleId, principal.employeeId);
       return jsonResponse(200, result, responseOptions);
+    }
+
+    // --- Camping: Trips ---
+    const campingTripsMatch = path.match(/^\/v1\/liff\/camping\/trips$/);
+    if (campingTripsMatch) {
+      if (method === 'POST') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await campingSplitService.createTrip({
+          tenantId: principal.tenantId,
+          title: body.title as string,
+          startDate: body.startDate as string,
+          endDate: body.endDate as string,
+          creatorEmployeeId: principal.employeeId,
+          creatorName: body.creatorName as string,
+          creatorLineUserId: principal.lineUserId ?? null,
+        });
+        return jsonResponse(201, result, responseOptions);
+      }
+      if (method === 'GET') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const trips = await campingRepository.listTripsByParticipantEmployeeId(principal.tenantId, principal.employeeId);
+        return jsonResponse(200, { trips }, responseOptions);
+      }
+    }
+
+    // --- Camping: Trip Detail ---
+    const campingTripDetailMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)$/);
+    if (campingTripDetailMatch) {
+      const tripId = campingTripDetailMatch[1];
+      if (method === 'GET') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const detail = await campingSplitService.getTripDetail(tripId);
+        return jsonResponse(200, detail, responseOptions);
+      }
+    }
+
+    // --- Camping: Participants ---
+    const campingParticipantsMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/participants$/);
+    if (campingParticipantsMatch) {
+      const tripId = campingParticipantsMatch[1];
+      if (method === 'POST') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        if (body.household) {
+          const hh = body.household as Record<string, unknown>;
+          const result = await campingSplitService.addHousehold(tripId, {
+            head: hh.head as any,
+            members: hh.members as any[],
+            settleAsHousehold: hh.settleAsHousehold as boolean,
+          });
+          return jsonResponse(201, result, responseOptions);
+        }
+        const result = await campingSplitService.addParticipant(tripId, body as any);
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    const campingParticipantMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/participants\/([^/]+)$/);
+    if (campingParticipantMatch) {
+      const [, tripId, participantId] = campingParticipantMatch;
+      if (method === 'PUT') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        await campingSplitService.updateParticipant(tripId, participantId, body as any);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+      if (method === 'DELETE') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        await campingSplitService.removeParticipant(tripId, participantId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // --- Camping: CampSites ---
+    const campingCampSitesMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/campsites$/);
+    if (campingCampSitesMatch) {
+      const tripId = campingCampSitesMatch[1];
+      if (method === 'POST') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await campingSplitService.addCampSite(tripId, body as any);
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    const campingCampSiteMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/campsites\/([^/]+)$/);
+    if (campingCampSiteMatch) {
+      const [, tripId, campSiteId] = campingCampSiteMatch;
+      if (method === 'PUT') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        await campingSplitService.updateCampSite(tripId, campSiteId, body as any);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+      if (method === 'DELETE') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        await campingSplitService.removeCampSite(tripId, campSiteId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // --- Camping: Expenses ---
+    const campingExpensesMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/expenses$/);
+    if (campingExpensesMatch) {
+      const tripId = campingExpensesMatch[1];
+      if (method === 'POST') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        const result = await campingSplitService.addExpense(tripId, body as any);
+        return jsonResponse(201, result, responseOptions);
+      }
+    }
+
+    const campingExpenseMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/expenses\/([^/]+)$/);
+    if (campingExpenseMatch) {
+      const [, tripId, expenseId] = campingExpenseMatch;
+      if (method === 'PUT') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        await campingSplitService.updateExpense(tripId, expenseId, body as any);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+      if (method === 'DELETE') {
+        await requireEmployeePrincipal({ event, authSessionService });
+        await campingSplitService.removeExpense(tripId, expenseId);
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
+    }
+
+    // --- Camping: Settlement ---
+    const campingSettleMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/settle$/);
+    if (campingSettleMatch && method === 'POST') {
+      const tripId = campingSettleMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const settlement = await campingSplitService.settle(tripId, principal.employeeId);
+      return jsonResponse(200, settlement, responseOptions);
+    }
+
+    const campingSettlementMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/settlement$/);
+    if (campingSettlementMatch && method === 'GET') {
+      const tripId = campingSettlementMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const settlement = await campingSplitService.getSettlement(tripId);
+      return jsonResponse(200, { settlement }, responseOptions);
+    }
+
+    // --- Camping: Public summary (no auth) ---
+    const campingSummaryMatch = path.match(/^\/v1\/public\/camping\/trips\/([^/]+)\/summary$/);
+    if (campingSummaryMatch && method === 'GET') {
+      const tripId = campingSummaryMatch[1];
+      const detail = await campingSplitService.getTripDetail(tripId);
+      return jsonResponse(200, detail, responseOptions);
     }
 
     return jsonResponse(404, { error: `Route not found: ${method} ${path}` }, responseOptions);

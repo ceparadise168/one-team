@@ -20,6 +20,8 @@ function makeSession(overrides: Partial<MassageSessionRecord> = {}): MassageSess
     endAt: '2026-04-15T10:30:00.000Z',
     location: 'B1 Massage Room',
     quota: 1,
+    slotDurationMinutes: 20,
+    therapistCount: 1,
     mode: 'LOTTERY',
     openAt: '2026-04-14T00:00:00.000Z',
     drawAt: '2025-01-01T00:00:00.000Z',
@@ -40,6 +42,7 @@ function makeBooking(sessionId: string, employeeId: string, lineUserId: string):
     tenantId: TENANT,
     bookingId: `bk-${employeeId}`,
     sessionId,
+    slotStartAt: '2026-04-15T10:00:00.000Z',
     employeeId,
     lineUserId,
     status: 'REGISTERED',
@@ -91,9 +94,9 @@ describe('MassageDrawWorker', () => {
 
     const bookings = await massageRepo.listBookingsBySession(TENANT, 'sess-01');
     const confirmed = bookings.filter(b => b.status === 'CONFIRMED');
-    const unsuccessful = bookings.filter(b => b.status === 'UNSUCCESSFUL');
+    const waitlisted = bookings.filter(b => b.status === 'WAITLISTED');
     assert.equal(confirmed.length, 1);
-    assert.equal(unsuccessful.length, 1);
+    assert.equal(waitlisted.length, 1);
   });
 
   it('MANUAL: sends notification to admin without drawing', async () => {

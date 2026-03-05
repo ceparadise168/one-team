@@ -7,6 +7,7 @@ import { StubLinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, ValidationError, ConflictError } from '../errors.js';
 
 const TENANT = 'test-tenant';
+const DEFAULT_SLOT = '2026-04-15T10:00:00.000Z';
 
 function createContext(nowStr = '2026-04-01T09:00:00.000Z') {
   const massageRepo = new InMemoryMassageBookingRepository();
@@ -50,6 +51,8 @@ function sessionInput(overrides: Record<string, unknown> = {}) {
     endAt: '2026-04-15T10:30:00.000Z',
     location: '3F Massage Room',
     quota: 1,
+    slotDurationMinutes: 20,
+    therapistCount: 1,
     mode: 'FIRST_COME' as const,
     openAt: '2026-04-14T00:00:00.000Z',
     drawAt: null,
@@ -82,6 +85,8 @@ describe('MassageBookingService — Session CRUD', () => {
     assert.equal(stored.mode, 'FIRST_COME');
     assert.equal(stored.status, 'ACTIVE');
     assert.equal(stored.quota, 1);
+    assert.equal(stored.slotDurationMinutes, 20);
+    assert.equal(stored.therapistCount, 1);
   });
 
   it('creates a Mode B session with drawAt', async () => {
@@ -145,6 +150,21 @@ describe('MassageBookingService — Session CRUD', () => {
     assert.equal(stored!.status, 'CANCELLED');
     assert.equal(stored!.cancellationNote, 'Room unavailable');
   });
+
+  it('defaults slotDurationMinutes to 20 and therapistCount to 1', async () => {
+    const { service, massageRepo, employeeRepo } = createContext();
+    await seedAdmin(employeeRepo);
+
+    const result = await service.createSession(sessionInput({
+      slotDurationMinutes: undefined,
+      therapistCount: undefined,
+    }));
+
+    const stored = await massageRepo.findSessionById(TENANT, result.sessionId);
+    assert.ok(stored);
+    assert.equal(stored.slotDurationMinutes, 20);
+    assert.equal(stored.therapistCount, 1);
+  });
 });
 
 describe('MassageBookingService — Mode A Booking', () => {
@@ -153,9 +173,9 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    const result = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const result = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     assert.ok(result.bookingId);
 
     const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
@@ -168,27 +188,28 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
     await assert.rejects(
-      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT }),
       (err: unknown) => err instanceof ValidationError
     );
   });
 
-  it('rejects booking when quota is full', async () => {
-    const { service, employeeRepo } = createContext('2026-04-14T12:00:00.000Z');
+  it('waitlists booking when slot is full', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-14T12:00:00.000Z');
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
     await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
 
     const { sessionId } = await service.createSession(sessionInput());
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
-    await assert.rejects(
-      () => service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02'),
-      (err: unknown) => err instanceof ConflictError
-    );
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    const result = await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
+    assert.ok(result.bookingId);
+
+    const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP02');
+    assert.equal(booking!.status, 'WAITLISTED');
   });
 
   it('rejects duplicate booking', async () => {
@@ -196,11 +217,11 @@ describe('MassageBookingService — Mode A Booking', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 5 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 5, therapistCount: 5 }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     await assert.rejects(
-      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT }),
       (err: unknown) => err instanceof ConflictError
     );
   });
@@ -218,7 +239,7 @@ describe('MassageBookingService — Mode B Lottery', () => {
       drawAt: '2026-04-14T12:00:00.000Z',
     }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
     assert.equal(booking!.status, 'REGISTERED');
   });
@@ -235,12 +256,12 @@ describe('MassageBookingService — Mode B Lottery', () => {
     }));
 
     await assert.rejects(
-      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01'),
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT }),
       (err: unknown) => err instanceof ValidationError
     );
   });
 
-  it('executeDraw picks winners and losers', async () => {
+  it('executeDraw picks winners and waitlists losers', async () => {
     const { service, massageRepo, employeeRepo } = createContext('2026-04-10T12:00:00.000Z');
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
@@ -253,17 +274,17 @@ describe('MassageBookingService — Mode B Lottery', () => {
       drawAt: '2026-04-14T12:00:00.000Z',
     }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
-    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02');
-    await service.bookSession(TENANT, sessionId, 'EMP03', 'line-emp-03');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP03', 'line-emp-03', { slotStartAt: DEFAULT_SLOT });
 
     await service.executeDraw(TENANT, sessionId);
 
     const bookings = await massageRepo.listBookingsBySession(TENANT, sessionId);
     const confirmed = bookings.filter(b => b.status === 'CONFIRMED');
-    const unsuccessful = bookings.filter(b => b.status === 'UNSUCCESSFUL');
+    const waitlisted = bookings.filter(b => b.status === 'WAITLISTED');
     assert.equal(confirmed.length, 1);
-    assert.equal(unsuccessful.length, 2);
+    assert.equal(waitlisted.length, 2);
 
     const session = await massageRepo.findSessionById(TENANT, sessionId);
     assert.ok(session!.drawnAt);
@@ -280,7 +301,7 @@ describe('MassageBookingService — Mode B Lottery', () => {
       drawAt: '2026-04-14T12:00:00.000Z',
     }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     await service.executeDraw(TENANT, sessionId);
     await assert.rejects(
       () => service.executeDraw(TENANT, sessionId),
@@ -295,9 +316,9 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     await service.cancelBooking(TENANT, bookingId, 'EMP01', 'Changed my mind');
 
     const booking = await massageRepo.findBookingById(TENANT, bookingId);
@@ -310,9 +331,9 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     await assert.rejects(
       () => service.cancelBooking(TENANT, bookingId, 'EMP01'),
       (err: unknown) => err instanceof ValidationError
@@ -324,9 +345,9 @@ describe('MassageBookingService — Cancellation', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     await service.adminCancelBooking(TENANT, bookingId, 'ADMIN01', 'Schedule conflict');
 
     const booking = await massageRepo.findBookingById(TENANT, bookingId);
@@ -340,9 +361,9 @@ describe('MassageBookingService — LINE Notifications', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     assert.equal(lineClient.pushedMessages.length, 1);
     assert.equal(lineClient.pushedMessages[0].lineUserId, 'line-emp-01');
     assert.ok(lineClient.pushedMessages[0].messages[0].text!.includes('成功預約'));
@@ -360,15 +381,15 @@ describe('MassageBookingService — LINE Notifications', () => {
       drawAt: '2026-04-14T12:00:00.000Z',
     }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
-    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
     lineClient.pushedMessages.length = 0;
 
     await service.executeDraw(TENANT, sessionId);
     assert.equal(lineClient.pushedMessages.length, 2);
     const texts = lineClient.pushedMessages.map(m => m.messages[0].text!);
     assert.ok(texts.some(t => t.includes('恭喜')));
-    assert.ok(texts.some(t => t.includes('遺憾')));
+    assert.ok(texts.some(t => t.includes('候補')));
   });
 
   it('sends cancellation notification', async () => {
@@ -376,9 +397,9 @@ describe('MassageBookingService — LINE Notifications', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     lineClient.pushedMessages.length = 0;
 
     await service.cancelBooking(TENANT, bookingId, 'EMP01');
@@ -393,11 +414,227 @@ describe('MassageBookingService — My Bookings', () => {
     await seedAdmin(employeeRepo);
     await seedEmployee(employeeRepo);
 
-    const { sessionId } = await service.createSession(sessionInput({ quota: 2 }));
+    const { sessionId } = await service.createSession(sessionInput({ quota: 2, therapistCount: 2 }));
 
-    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01');
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
     const bookings = await service.listMyBookings(TENANT, 'EMP01');
     assert.equal(bookings.length, 1);
     assert.equal(bookings[0].sessionId, sessionId);
+  });
+});
+
+// ─── New Slot-based Tests ────────────────────────────────────────────
+
+describe('MassageBookingService — Slot-based Booking', () => {
+  it('books a specific time slot in FIRST_COME mode', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-14T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    // Session 12:00-13:00, 20-min slots, 2 therapists → slots: 12:00, 12:20, 12:40
+    const { sessionId } = await service.createSession(sessionInput({
+      startAt: '2026-04-15T12:00:00.000Z',
+      endAt: '2026-04-15T13:00:00.000Z',
+      slotDurationMinutes: 20,
+      therapistCount: 2,
+      quota: 6,
+    }));
+
+    const result = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', {
+      slotStartAt: '2026-04-15T12:00:00.000Z',
+    });
+    assert.ok(result.bookingId);
+
+    const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
+    assert.ok(booking);
+    assert.equal(booking.status, 'CONFIRMED');
+    assert.equal(booking.slotStartAt, '2026-04-15T12:00:00.000Z');
+  });
+
+  it('rejects booking for invalid slot time', async () => {
+    const { service, employeeRepo } = createContext('2026-04-14T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    // Slots: 12:00, 12:20, 12:40
+    const { sessionId } = await service.createSession(sessionInput({
+      startAt: '2026-04-15T12:00:00.000Z',
+      endAt: '2026-04-15T13:00:00.000Z',
+      slotDurationMinutes: 20,
+      therapistCount: 2,
+      quota: 6,
+    }));
+
+    await assert.rejects(
+      () => service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', {
+        slotStartAt: '2026-04-15T12:15:00.000Z',
+      }),
+      (err: unknown) => err instanceof ValidationError
+    );
+  });
+
+  it('slot full → books as WAITLISTED', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-14T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+
+    // therapistCount=1, so only 1 person per slot
+    const { sessionId } = await service.createSession(sessionInput({
+      startAt: '2026-04-15T12:00:00.000Z',
+      endAt: '2026-04-15T13:00:00.000Z',
+      slotDurationMinutes: 20,
+      therapistCount: 1,
+      quota: 3,
+    }));
+
+    const slot = '2026-04-15T12:00:00.000Z';
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: slot });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: slot });
+
+    const first = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
+    const second = await massageRepo.findBooking(TENANT, sessionId, 'EMP02');
+    assert.equal(first!.status, 'CONFIRMED');
+    assert.equal(second!.status, 'WAITLISTED');
+  });
+});
+
+describe('MassageBookingService — Slot-based Lottery', () => {
+  it('registers for preferred slot in LOTTERY mode', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-11T00:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    const { sessionId } = await service.createSession(sessionInput({
+      mode: 'LOTTERY',
+      openAt: '2026-04-10T00:00:00.000Z',
+      drawAt: '2026-04-14T12:00:00.000Z',
+      startAt: '2026-04-15T12:00:00.000Z',
+      endAt: '2026-04-15T13:00:00.000Z',
+      slotDurationMinutes: 20,
+      therapistCount: 1,
+      quota: 3,
+    }));
+
+    const slot = '2026-04-15T12:00:00.000Z';
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: slot });
+
+    const booking = await massageRepo.findBooking(TENANT, sessionId, 'EMP01');
+    assert.equal(booking!.status, 'REGISTERED');
+    assert.equal(booking!.slotStartAt, slot);
+  });
+
+  it('executeDraw draws per-slot', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-10T12:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+    await seedEmployee(employeeRepo, 'EMP03', 'line-emp-03');
+
+    // therapistCount=1, so 1 winner per slot
+    const { sessionId } = await service.createSession(sessionInput({
+      mode: 'LOTTERY',
+      openAt: '2026-04-10T00:00:00.000Z',
+      drawAt: '2026-04-14T12:00:00.000Z',
+      startAt: '2026-04-15T12:00:00.000Z',
+      endAt: '2026-04-15T13:00:00.000Z',
+      slotDurationMinutes: 20,
+      therapistCount: 1,
+      quota: 3,
+    }));
+
+    // All 3 register for the same slot
+    const slot = '2026-04-15T12:00:00.000Z';
+    await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: slot });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: slot });
+    await service.bookSession(TENANT, sessionId, 'EMP03', 'line-emp-03', { slotStartAt: slot });
+
+    await service.executeDraw(TENANT, sessionId);
+
+    const bookings = await massageRepo.listBookingsBySession(TENANT, sessionId);
+    const confirmed = bookings.filter(b => b.status === 'CONFIRMED');
+    const waitlisted = bookings.filter(b => b.status === 'WAITLISTED');
+    assert.equal(confirmed.length, 1);
+    assert.equal(waitlisted.length, 2);
+  });
+});
+
+describe('MassageBookingService — Waitlist Auto-Promote', () => {
+  it('auto-promotes first waitlisted person when confirmed booking cancelled', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-15T07:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+    await seedEmployee(employeeRepo, 'EMP03', 'line-emp-03');
+
+    // therapistCount=1
+    const { sessionId } = await service.createSession(sessionInput());
+
+    const { bookingId: b1 } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP03', 'line-emp-03', { slotStartAt: DEFAULT_SLOT });
+
+    // EMP01 is CONFIRMED, EMP02 & EMP03 are WAITLISTED
+    // Cancel EMP01 → EMP02 should auto-promote
+    await service.cancelBooking(TENANT, b1, 'EMP01');
+
+    const emp2 = await massageRepo.findBooking(TENANT, sessionId, 'EMP02');
+    assert.equal(emp2!.status, 'CONFIRMED');
+
+    const emp3 = await massageRepo.findBooking(TENANT, sessionId, 'EMP03');
+    assert.equal(emp3!.status, 'WAITLISTED');
+  });
+
+  it('sends LINE notification when auto-promoted', async () => {
+    const { service, employeeRepo, lineClient } = createContext('2026-04-15T07:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+
+    const { sessionId } = await service.createSession(sessionInput());
+
+    const { bookingId: b1 } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
+
+    lineClient.pushedMessages.length = 0;
+
+    await service.cancelBooking(TENANT, b1, 'EMP01');
+
+    // Should have cancel notification + auto-promote notification
+    const promoteMsg = lineClient.pushedMessages.find(m => m.lineUserId === 'line-emp-02');
+    assert.ok(promoteMsg);
+    assert.ok(promoteMsg.messages[0].text!.includes('遞補成功'));
+  });
+
+  it('no auto-promote when no waitlisted bookings exist', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-15T07:00:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo);
+
+    const { sessionId } = await service.createSession(sessionInput());
+
+    const { bookingId } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.cancelBooking(TENANT, bookingId, 'EMP01');
+
+    const booking = await massageRepo.findBookingById(TENANT, bookingId);
+    assert.equal(booking!.status, 'CANCELLED');
+    // No error thrown, just no promotion
+  });
+
+  it('admin cancel also triggers auto-promote', async () => {
+    const { service, massageRepo, employeeRepo } = createContext('2026-04-15T09:30:00.000Z');
+    await seedAdmin(employeeRepo);
+    await seedEmployee(employeeRepo, 'EMP01', 'line-emp-01');
+    await seedEmployee(employeeRepo, 'EMP02', 'line-emp-02');
+
+    const { sessionId } = await service.createSession(sessionInput());
+
+    const { bookingId: b1 } = await service.bookSession(TENANT, sessionId, 'EMP01', 'line-emp-01', { slotStartAt: DEFAULT_SLOT });
+    await service.bookSession(TENANT, sessionId, 'EMP02', 'line-emp-02', { slotStartAt: DEFAULT_SLOT });
+
+    await service.adminCancelBooking(TENANT, b1, 'ADMIN01', 'Schedule conflict');
+
+    const emp2 = await massageRepo.findBooking(TENANT, sessionId, 'EMP02');
+    assert.equal(emp2!.status, 'CONFIRMED');
   });
 });

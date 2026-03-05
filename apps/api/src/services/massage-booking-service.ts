@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { MassageSessionRecord, MassageSessionMode, MassageDrawMode, MassageBookingRecord } from '../domain/massage-booking.js';
+import { generateSlots } from '../domain/massage-booking.js';
 import type { MassageBookingRepository } from '../repositories/massage-booking-repository.js';
 import type { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import type { LinePlatformClient } from '../line/line-platform-client.js';
@@ -16,6 +17,8 @@ interface CreateSessionInput {
   endAt: string;
   location: string;
   quota: number;
+  slotDurationMinutes?: number;
+  therapistCount?: number;
   mode: MassageSessionMode;
   openAt: string;
   drawAt: string | null;
@@ -47,6 +50,8 @@ export class MassageBookingService {
       endAt: input.endAt,
       location: input.location,
       quota: input.quota,
+      slotDurationMinutes: input.slotDurationMinutes ?? 20,
+      therapistCount: input.therapistCount ?? 1,
       mode: input.mode,
       openAt: input.openAt,
       drawAt: input.drawAt,
@@ -86,7 +91,10 @@ export class MassageBookingService {
     await this.massageRepo.updateSession(session);
   }
 
-  async bookSession(tenantId: string, sessionId: string, employeeId: string, lineUserId: string): Promise<{ bookingId: string }> {
+  async bookSession(
+    tenantId: string, sessionId: string, employeeId: string, lineUserId: string,
+    options?: { slotStartAt?: string }
+  ): Promise<{ bookingId: string }> {
     const session = await this.getSession(tenantId, sessionId);
     if (session.status !== 'ACTIVE') throw new ValidationError('Session is not active');
 
@@ -100,22 +108,39 @@ export class MassageBookingService {
       }
     }
 
+    // Validate slotStartAt
+    const slotStartAt = options?.slotStartAt;
+    if (!slotStartAt) {
+      throw new ValidationError('slotStartAt is required');
+    }
+    const validSlots = generateSlots(session);
+    if (!validSlots.includes(slotStartAt)) {
+      throw new ValidationError('Invalid slot time');
+    }
+
     // Check duplicate
     const existing = await this.massageRepo.findBooking(tenantId, sessionId, employeeId);
     if (existing && existing.status !== 'CANCELLED') throw new ConflictError('Already booked this session');
 
+    let status: 'CONFIRMED' | 'REGISTERED' | 'WAITLISTED';
     if (session.mode === 'FIRST_COME') {
-      const confirmedCount = await this.massageRepo.countConfirmedBookings(tenantId, sessionId);
-      if (confirmedCount >= session.quota) throw new ConflictError('Session is full');
+      const confirmedCount = await this.massageRepo.countConfirmedBySlot(tenantId, sessionId, slotStartAt);
+      if (confirmedCount >= session.therapistCount) {
+        status = 'WAITLISTED';
+      } else {
+        status = 'CONFIRMED';
+      }
+    } else {
+      status = 'REGISTERED';
     }
 
     const bookingId = randomUUID().slice(0, 8);
-    const status = session.mode === 'FIRST_COME' ? 'CONFIRMED' : 'REGISTERED';
 
     const booking: MassageBookingRecord = {
       tenantId,
       bookingId,
       sessionId,
+      slotStartAt,
       employeeId,
       lineUserId,
       status,
@@ -127,7 +152,9 @@ export class MassageBookingService {
     await this.massageRepo.createBooking(booking);
 
     if (status === 'CONFIRMED') {
-      await this.notify(tenantId, lineUserId, this.formatConfirmedMessage(session));
+      await this.notify(tenantId, lineUserId, this.formatConfirmedMessage(session, slotStartAt));
+    } else if (status === 'WAITLISTED') {
+      await this.notify(tenantId, lineUserId, `📝 你已加入 ${session.date} 按摩的候補名單`);
     } else {
       await this.notify(tenantId, lineUserId, this.formatRegisteredMessage(session));
     }
@@ -143,31 +170,48 @@ export class MassageBookingService {
     const bookings = await this.massageRepo.listBookingsBySession(tenantId, sessionId);
     const registered = bookings.filter(b => b.status === 'REGISTERED');
 
-    // Fisher-Yates shuffle
-    for (let i = registered.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [registered[i], registered[j]] = [registered[j], registered[i]];
+    // Group by slot
+    const bySlot = new Map<string, MassageBookingRecord[]>();
+    for (const b of registered) {
+      const slot = b.slotStartAt;
+      if (!bySlot.has(slot)) bySlot.set(slot, []);
+      bySlot.get(slot)!.push(b);
     }
 
-    const winners = registered.slice(0, session.quota);
-    const losers = registered.slice(session.quota);
+    const allWinners: MassageBookingRecord[] = [];
+    const allLosers: MassageBookingRecord[] = [];
 
-    for (const booking of winners) {
-      booking.status = 'CONFIRMED';
-      await this.massageRepo.updateBooking(booking);
-    }
-    for (const booking of losers) {
-      booking.status = 'UNSUCCESSFUL';
-      await this.massageRepo.updateBooking(booking);
+    for (const [, slotBookings] of bySlot) {
+      // Fisher-Yates shuffle
+      for (let i = slotBookings.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [slotBookings[i], slotBookings[j]] = [slotBookings[j], slotBookings[i]];
+      }
+
+      const winners = slotBookings.slice(0, session.therapistCount);
+      const losers = slotBookings.slice(session.therapistCount);
+
+      for (const booking of winners) {
+        booking.status = 'CONFIRMED';
+        await this.massageRepo.updateBooking(booking);
+        allWinners.push(booking);
+      }
+      for (const booking of losers) {
+        booking.status = 'WAITLISTED';
+        await this.massageRepo.updateBooking(booking);
+        allLosers.push(booking);
+      }
     }
 
     session.drawnAt = this.options.now().toISOString();
     await this.massageRepo.updateSession(session);
 
-    for (const booking of [...winners, ...losers]) {
-      const msg = booking.status === 'CONFIRMED'
-        ? `🎉 恭喜！你已中籤 ${session.date} 的按摩（${session.location}）`
-        : `😢 很遺憾，${session.date} 的按摩未中籤`;
+    for (const booking of allWinners) {
+      const msg = `🎉 恭喜！你已中籤 ${session.date} 的按摩（${session.location}）`;
+      await this.notify(tenantId, booking.lineUserId, msg);
+    }
+    for (const booking of allLosers) {
+      const msg = `📋 ${session.date} 的按摩未中籤，已加入候補名單`;
       await this.notify(tenantId, booking.lineUserId, msg);
     }
   }
@@ -183,6 +227,8 @@ export class MassageBookingService {
     const twoHoursBefore = new Date(new Date(session.startAt).getTime() - 2 * 60 * 60 * 1000);
     if (now >= twoHoursBefore) throw new ValidationError('Cannot cancel within 2 hours of session start');
 
+    const wasConfirmed = booking.status === 'CONFIRMED';
+
     booking.status = 'CANCELLED';
     booking.cancelledAt = now.toISOString();
     booking.cancelledByEmployeeId = employeeId;
@@ -190,6 +236,10 @@ export class MassageBookingService {
     await this.massageRepo.updateBooking(booking);
 
     await this.notify(tenantId, booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已取消`);
+
+    if (wasConfirmed) {
+      await this.tryPromoteWaitlisted(tenantId, booking.sessionId, booking.slotStartAt);
+    }
   }
 
   async adminCancelBooking(tenantId: string, bookingId: string, adminEmployeeId: string, reason?: string): Promise<void> {
@@ -197,6 +247,8 @@ export class MassageBookingService {
     const booking = await this.massageRepo.findBookingById(tenantId, bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
     if (booking.status === 'CANCELLED') throw new ValidationError('Booking already cancelled');
+
+    const wasConfirmed = booking.status === 'CONFIRMED';
 
     booking.status = 'CANCELLED';
     booking.cancelledAt = this.options.now().toISOString();
@@ -206,6 +258,10 @@ export class MassageBookingService {
 
     const session = await this.getSession(tenantId, booking.sessionId);
     await this.notify(tenantId, booking.lineUserId, `❌ 你的 ${session.date} 按摩預約已被管理員取消`);
+
+    if (wasConfirmed) {
+      await this.tryPromoteWaitlisted(tenantId, booking.sessionId, booking.slotStartAt);
+    }
   }
 
   async listMyBookings(tenantId: string, employeeId: string): Promise<MassageBookingRecord[]> {
@@ -217,8 +273,23 @@ export class MassageBookingService {
     return this.massageRepo.listBookingsBySession(tenantId, sessionId);
   }
 
-  private formatConfirmedMessage(session: MassageSessionRecord): string {
-    const timeStr = new Date(session.startAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  private async tryPromoteWaitlisted(tenantId: string, sessionId: string, slotStartAt: string): Promise<void> {
+    const session = await this.getSession(tenantId, sessionId);
+    const waitlisted = await this.massageRepo.listWaitlistedBySlot(tenantId, sessionId, slotStartAt);
+    if (waitlisted.length === 0) return;
+
+    const next = waitlisted[0];
+    next.status = 'CONFIRMED';
+    await this.massageRepo.updateBooking(next);
+
+    const timeStr = new Date(slotStartAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    await this.notify(tenantId, next.lineUserId,
+      `🎉 你已遞補成功！${session.date} ${timeStr} 的按摩（${session.location}）`);
+  }
+
+  private formatConfirmedMessage(session: MassageSessionRecord, slotStartAt?: string): string {
+    const time = slotStartAt ?? session.startAt;
+    const timeStr = new Date(time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     return `✅ 你已成功預約 ${session.date} ${timeStr} 的按摩（${session.location}）`;
   }
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import { useCreateTrip } from './use-camping';
+import { campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
 export function CreateTrip() {
@@ -30,8 +31,8 @@ export function CreateTrip() {
   };
 
   return (
-    <div style={styles.container}>
-      <button onClick={() => navigate('/camping')} style={styles.backBtn}>← 返回</button>
+    <div style={cs.container}>
+      <button onClick={() => navigate('/camping')} style={cs.backBtn}>← 返回</button>
       <h1 style={styles.title}>新增露營行程</h1>
 
       <form onSubmit={handleSubmit} style={styles.form}>
@@ -77,11 +78,6 @@ export function CreateTrip() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
-  backBtn: {
-    background: 'none', border: 'none', color: '#1DB446', fontSize: 14,
-    fontWeight: 'bold', cursor: 'pointer', padding: 0, marginBottom: 8,
-  },
   title: { fontSize: 22, margin: '8px 0 20px', fontWeight: 700 },
   form: { display: 'flex', flexDirection: 'column', gap: 16 },
   label: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600, color: '#333' },

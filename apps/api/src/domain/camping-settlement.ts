@@ -41,14 +41,14 @@ export function calculateSettlement(
 
   // --- Expenses ---
   for (const expense of expenses) {
-    let targetIds: string[];
+    let targetIdSet: Set<string>;
     if (expense.splitType === 'CUSTOM' && expense.splitAmong) {
-      targetIds = expense.splitAmong;
+      targetIdSet = new Set(expense.splitAmong);
     } else {
-      targetIds = participants.filter(p => p.splitWeight > 0).map(p => p.participantId);
+      targetIdSet = new Set(participants.filter(p => p.splitWeight > 0).map(p => p.participantId));
     }
 
-    const targetParticipants = participants.filter(p => targetIds.includes(p.participantId));
+    const targetParticipants = participants.filter(p => targetIdSet.has(p.participantId));
     const totalWeight = targetParticipants.reduce((sum, p) => sum + p.splitWeight, 0);
 
     if (totalWeight > 0) {

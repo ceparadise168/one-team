@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth-context';
 import { useCampingTrips } from './use-camping';
 import type { CampingTrip } from './use-camping';
+import { campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
 const STATUS_LABELS: Record<CampingTrip['status'], { label: string; bg: string; color: string }> = {
@@ -13,11 +14,11 @@ export function TripList() {
   const { apiBaseUrl, accessToken } = useAuth();
   const { trips, loading, error } = useCampingTrips(apiBaseUrl, accessToken);
 
-  if (loading) return <div style={styles.container}><p style={styles.loading}>載入中...</p></div>;
-  if (error) return <div style={styles.container}><p style={styles.error}>{error}</p></div>;
+  if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
+  if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
 
   return (
-    <div style={styles.container}>
+    <div style={cs.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>露營分帳</h1>
         <Link to="/camping/new" style={styles.createBtn}>+ 新增行程</Link>
@@ -51,7 +52,6 @@ export function TripList() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   title: { fontSize: 22, margin: 0, fontWeight: 700 },
   createBtn: {
@@ -63,8 +63,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
   },
-  loading: { color: '#999', textAlign: 'center' },
-  error: { color: '#c62828', textAlign: 'center' },
   empty: { textAlign: 'center', padding: '48px 0' },
   emptyText: { fontSize: 16, color: '#666', margin: 0 },
   emptyHint: { fontSize: 13, color: '#999', marginTop: 8 },

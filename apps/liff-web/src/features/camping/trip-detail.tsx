@@ -6,6 +6,7 @@ import { ParticipantsTab } from './participants-tab';
 import { CampSitesTab } from './campsites-tab';
 import { ExpensesTab } from './expenses-tab';
 import { SettlementTab } from './settlement-tab';
+import { campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
 type Tab = 'participants' | 'campsites' | 'expenses' | 'settlement';
@@ -26,9 +27,9 @@ export function TripDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('participants');
   const [mutationError, setMutationError] = useState<string | null>(null);
 
-  if (loading) return <div style={styles.container}><p style={styles.loading}>載入中...</p></div>;
-  if (error) return <div style={styles.container}><p style={styles.error}>{error}</p></div>;
-  if (!detail) return <div style={styles.container}><p style={styles.error}>找不到行程</p></div>;
+  if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
+  if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
+  if (!detail) return <div style={cs.container}><p style={cs.error}>找不到行程</p></div>;
 
   const isOpen = detail.trip.status === 'OPEN';
 
@@ -44,8 +45,8 @@ export function TripDetail() {
     };
 
   return (
-    <div style={styles.container}>
-      <button onClick={() => navigate('/camping')} style={styles.backBtn}>← 返回</button>
+    <div style={cs.container}>
+      <button onClick={() => navigate('/camping')} style={cs.backBtn}>← 返回</button>
 
       <div style={styles.header}>
         <h1 style={styles.title}>{detail.trip.title}</h1>
@@ -135,13 +136,6 @@ export function TripDetail() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: 16, fontFamily: 'sans-serif', maxWidth: 480, margin: '0 auto' },
-  loading: { color: '#999', textAlign: 'center' },
-  error: { color: '#c62828', textAlign: 'center' },
-  backBtn: {
-    background: 'none', border: 'none', color: '#1DB446', fontSize: 14,
-    fontWeight: 'bold', cursor: 'pointer', padding: 0, marginBottom: 8,
-  },
   header: { marginBottom: 16 },
   title: { fontSize: 22, margin: '8px 0 4px', fontWeight: 700 },
   dateRange: { fontSize: 13, color: '#888' },

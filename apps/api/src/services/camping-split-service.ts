@@ -231,9 +231,11 @@ export class CampingSplitService {
       throw new ValidationError('Trip is already settled');
     }
 
-    const participants = await this.repo.listParticipants(tripId);
-    const campSites = await this.repo.listCampSites(tripId);
-    const expenses = await this.repo.listExpenses(tripId);
+    const [participants, campSites, expenses] = await Promise.all([
+      this.repo.listParticipants(tripId),
+      this.repo.listCampSites(tripId),
+      this.repo.listExpenses(tripId),
+    ]);
 
     const result = calculateSettlement(participants, campSites, expenses);
 
@@ -262,17 +264,21 @@ export class CampingSplitService {
     if (callerTenantId && trip.tenantId !== callerTenantId) {
       throw new ForbiddenError('Cannot access trip from different tenant');
     }
-    const participants = await this.repo.listParticipants(tripId);
-    const campSites = await this.repo.listCampSites(tripId);
-    const expenses = await this.repo.listExpenses(tripId);
-    const settlement = await this.repo.findSettlement(tripId);
+    const [participants, campSites, expenses, settlement] = await Promise.all([
+      this.repo.listParticipants(tripId),
+      this.repo.listCampSites(tripId),
+      this.repo.listExpenses(tripId),
+      this.repo.findSettlement(tripId),
+    ]);
     return { trip, participants, campSites, expenses, settlement };
   }
 
   async getPublicSummary(tripId: string) {
     const trip = await this.getTrip(tripId);
-    const participants = await this.repo.listParticipants(tripId);
-    const settlement = await this.repo.findSettlement(tripId);
+    const [participants, settlement] = await Promise.all([
+      this.repo.listParticipants(tripId),
+      this.repo.findSettlement(tripId),
+    ]);
     const participantNames: Record<string, string> = {};
     for (const p of participants) {
       participantNames[p.participantId] = p.name;
@@ -302,6 +308,7 @@ export class CampingSplitService {
   ): Promise<void> {
     const nameOf = new Map(participants.map(p => [p.participantId, p.name]));
 
+    const pushPromises: Promise<void>[] = [];
     for (const summary of settlement.participantSummaries) {
       const participant = participants.find(p => p.participantId === summary.participantId);
       if (!participant?.lineUserId) continue;
@@ -318,15 +325,16 @@ export class CampingSplitService {
         text = `⛺ ${trip.title} 結算完成\n\n你已結清，無需轉帳`;
       }
 
-      try {
-        await this.lineClient.pushMessage({
+      pushPromises.push(
+        this.lineClient.pushMessage({
           tenantId: trip.tenantId,
           lineUserId: participant.lineUserId,
           messages: [{ type: 'text', text }],
-        });
-      } catch {
-        // Notification failure should not break settlement
-      }
+        }).catch(() => {
+          // Notification failure should not break settlement
+        }),
+      );
     }
+    await Promise.allSettled(pushPromises);
   }
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { TripParticipant } from './use-camping';
+import { groupByHousehold, campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
 interface Props {
@@ -31,17 +32,7 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
   const [members, setMembers] = useState<Array<{ name: string; weight: 1 | 0.5 | 0 }>>([{ name: '', weight: 1 }]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Group by household
-  const households = new Map<string, TripParticipant[]>();
-  const individuals: TripParticipant[] = [];
-  for (const p of participants) {
-    if (p.householdId) {
-      if (!households.has(p.householdId)) households.set(p.householdId, []);
-      households.get(p.householdId)!.push(p);
-    } else {
-      individuals.push(p);
-    }
-  }
+  const { households, individuals } = groupByHousehold(participants);
 
   const handleAddIndividual = async () => {
     if (!name.trim()) return;
@@ -72,7 +63,7 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
 
   return (
     <div>
-      <div style={styles.summary}>共 {participants.length} 人</div>
+      <div style={cs.summary}>共 {participants.length} 人</div>
 
       {/* Individuals */}
       {individuals.map(p => (
@@ -81,7 +72,7 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
             <span style={styles.participantName}>{p.name}</span>
             <WeightBadge weight={p.splitWeight} />
             {isOpen && (
-              <button onClick={() => onRemove(p.participantId)} style={styles.removeBtn}>移除</button>
+              <button onClick={() => onRemove(p.participantId)} style={cs.removeBtn}>移除</button>
             )}
           </div>
         </div>
@@ -100,7 +91,7 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
                 </span>
                 <WeightBadge weight={m.splitWeight} />
                 {isOpen && (
-                  <button onClick={() => onRemove(m.participantId)} style={styles.removeBtn}>移除</button>
+                  <button onClick={() => onRemove(m.participantId)} style={cs.removeBtn}>移除</button>
                 )}
               </div>
             ))}
@@ -118,13 +109,13 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
 
       {/* Individual form */}
       {showAddForm === 'individual' && (
-        <div style={styles.formCard}>
-          <div style={styles.formTitle}>新增個人</div>
-          <input style={styles.input} placeholder="名字" value={name} onChange={e => setName(e.target.value)} />
+        <div style={cs.formCard}>
+          <div style={cs.formTitle}>新增個人</div>
+          <input style={cs.input} placeholder="名字" value={name} onChange={e => setName(e.target.value)} />
           <WeightSelect value={weight} onChange={setWeight} />
-          <div style={styles.formActions}>
-            <button onClick={() => setShowAddForm('none')} style={styles.cancelBtn}>取消</button>
-            <button onClick={handleAddIndividual} disabled={submitting} style={styles.confirmBtn}>
+          <div style={cs.formActions}>
+            <button onClick={() => setShowAddForm('none')} style={cs.cancelBtn}>取消</button>
+            <button onClick={handleAddIndividual} disabled={submitting} style={cs.confirmBtn}>
               {submitting ? '新增中...' : '確認新增'}
             </button>
           </div>
@@ -133,17 +124,17 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
 
       {/* Household form */}
       {showAddForm === 'household' && (
-        <div style={styles.formCard}>
-          <div style={styles.formTitle}>新增一戶</div>
-          <div style={styles.formSection}>戶主</div>
-          <input style={styles.input} placeholder="戶主名字" value={householdHead} onChange={e => setHouseholdHead(e.target.value)} />
+        <div style={cs.formCard}>
+          <div style={cs.formTitle}>新增一戶</div>
+          <div style={cs.fieldLabel}>戶主</div>
+          <input style={cs.input} placeholder="戶主名字" value={householdHead} onChange={e => setHouseholdHead(e.target.value)} />
           <WeightSelect value={householdHeadWeight} onChange={setHouseholdHeadWeight} />
 
-          <div style={styles.formSection}>家庭成員</div>
+          <div style={cs.fieldLabel}>家庭成員</div>
           {members.map((m, i) => (
             <div key={i} style={styles.memberRow}>
               <input
-                style={{ ...styles.input, flex: 1 }}
+                style={{ ...cs.input, flex: 1 }}
                 placeholder={`成員 ${i + 1} 名字`}
                 value={m.name}
                 onChange={e => {
@@ -172,9 +163,9 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
             + 增加成員
           </button>
 
-          <div style={styles.formActions}>
-            <button onClick={() => setShowAddForm('none')} style={styles.cancelBtn}>取消</button>
-            <button onClick={handleAddHousehold} disabled={submitting} style={styles.confirmBtn}>
+          <div style={cs.formActions}>
+            <button onClick={() => setShowAddForm('none')} style={cs.cancelBtn}>取消</button>
+            <button onClick={handleAddHousehold} disabled={submitting} style={cs.confirmBtn}>
               {submitting ? '新增中...' : '確認新增'}
             </button>
           </div>
@@ -204,15 +195,10 @@ function WeightSelect({ value, onChange }: { value: 1 | 0.5 | 0; onChange: (v: 1
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  summary: { fontSize: 13, color: '#888', marginBottom: 12 },
   participantCard: { padding: '10px 12px', borderBottom: '1px solid #f0f0f0' },
   participantRow: { display: 'flex', alignItems: 'center', gap: 8 },
   participantName: { flex: 1, fontSize: 15 },
   badge: { padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 'bold' },
-  removeBtn: {
-    background: 'none', border: 'none', color: '#c62828', fontSize: 12,
-    cursor: 'pointer', padding: '2px 6px',
-  },
   householdCard: {
     padding: 12, border: '1px solid #e0e0e0', borderRadius: 10,
     marginBottom: 10, backgroundColor: '#fafafa',
@@ -222,16 +208,6 @@ const styles: Record<string, React.CSSProperties> = {
   addBtn: {
     flex: 1, padding: '10px 0', border: '1px dashed #bbb', borderRadius: 8,
     backgroundColor: '#fff', fontSize: 14, cursor: 'pointer', color: '#555',
-  },
-  formCard: {
-    padding: 16, border: '1px solid #e0e0e0', borderRadius: 12,
-    marginTop: 16, backgroundColor: '#fff',
-  },
-  formTitle: { fontSize: 15, fontWeight: 600, marginBottom: 12 },
-  formSection: { fontSize: 13, fontWeight: 600, color: '#666', marginTop: 12, marginBottom: 4 },
-  input: {
-    padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8,
-    fontSize: 14, width: '100%', boxSizing: 'border-box', marginBottom: 8,
   },
   select: {
     padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8,
@@ -245,14 +221,5 @@ const styles: Record<string, React.CSSProperties> = {
   addMemberBtn: {
     background: 'none', border: 'none', color: '#1DB446', fontSize: 13,
     cursor: 'pointer', padding: '4px 0', fontWeight: 600,
-  },
-  formActions: { display: 'flex', gap: 8, marginTop: 12 },
-  cancelBtn: {
-    flex: 1, padding: '10px 0', border: '1px solid #ddd', borderRadius: 8,
-    backgroundColor: '#fff', fontSize: 14, cursor: 'pointer',
-  },
-  confirmBtn: {
-    flex: 1, padding: '10px 0', border: 'none', borderRadius: 8,
-    backgroundColor: '#1DB446', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
   },
 };

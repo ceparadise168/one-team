@@ -63,12 +63,10 @@ export class DynamoDbCampingRepository implements CampingRepository {
     const tripIds = (result.Items ?? []).map(item => (item as Record<string, unknown>).tripId as string);
     const uniqueTripIds = [...new Set(tripIds)];
 
-    const trips: CampingTripRecord[] = [];
-    for (const tripId of uniqueTripIds) {
-      const trip = await this.findTripById(tripId);
-      if (trip && trip.tenantId === tenantId) trips.push(trip);
-    }
-    return trips;
+    const tripResults = await Promise.all(
+      uniqueTripIds.map(tripId => this.findTripById(tripId)),
+    );
+    return tripResults.filter((trip): trip is CampingTripRecord => trip !== null && trip.tenantId === tenantId);
   }
 
   // --- Participants ---

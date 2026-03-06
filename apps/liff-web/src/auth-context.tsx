@@ -80,7 +80,12 @@ function getInitialTokens(): { accessToken: string; refreshToken: string; tenant
   const storedAccess = sessionStorage.getItem(STORAGE_KEY_ACCESS) ?? '';
   const storedRefresh = sessionStorage.getItem(STORAGE_KEY_REFRESH) ?? '';
   const storedTenant = sessionStorage.getItem(STORAGE_KEY_TENANT) ?? '';
-  return { accessToken: storedAccess, refreshToken: storedRefresh, tenantId: storedTenant };
+  // URL tenantId takes priority (e.g. shared link with tenantId but no accessToken)
+  const tenantId = urlTenant || storedTenant;
+  if (urlTenant && urlTenant !== storedTenant) {
+    try { sessionStorage.setItem(STORAGE_KEY_TENANT, urlTenant); } catch { /* private browsing */ }
+  }
+  return { accessToken: storedAccess, refreshToken: storedRefresh, tenantId };
 }
 
 export function AuthProvider({

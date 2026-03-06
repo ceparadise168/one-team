@@ -277,6 +277,8 @@ export class WebhookEventService {
 
     const binding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
     const isAdmin = await this.checkAdminPermission(tenantId, lineUserId);
+    const tenant = await this.tenantRepository.findById(tenantId);
+    const liffId = tenant?.line.resources.liffId;
 
     let accessToken: string | undefined;
     let refreshToken: string | undefined;
@@ -297,6 +299,7 @@ export class WebhookEventService {
         buildServicesMenuFlexMessage({
           isAdmin,
           liffWebBaseUrl: this.options.liffWebBaseUrl,
+          liffId,
           tenantId,
           accessToken,
           refreshToken,

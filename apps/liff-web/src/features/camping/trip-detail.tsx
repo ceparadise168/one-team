@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import liff from '@line/liff';
 import { useAuth } from '../../auth-context';
 import { useTripDetail, useTripMutations } from './use-camping';
 import { ParticipantsTab } from './participants-tab';
@@ -26,12 +27,100 @@ export function TripDetail() {
   const mutations = useTripMutations(apiBaseUrl, accessToken, tripId!);
   const [activeTab, setActiveTab] = useState<Tab>('participants');
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const liffId = import.meta.env.VITE_LIFF_ID ?? '';
 
   if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
   if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
   if (!detail) return <div style={cs.container}><p style={cs.error}>找不到行程</p></div>;
 
   const isOpen = detail.trip.status === 'OPEN';
+
+  const getTripUrl = () => liffId
+    ? `https://liff.line.me/${liffId}/camping/${detail.trip.tripId}?tenantId=${tenantId}`
+    : `${window.location.origin}/camping/${detail.trip.tripId}?tenantId=${tenantId}`;
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      // Ensure LIFF SDK is fully initialized before using shareTargetPicker
+      await liff.ready;
+      const tripUrl = getTripUrl();
+      const nameOf = new Map(detail.participants.map(p => [p.participantId, p.name]));
+      const settlement = detail.settlement;
+
+      let bodyContents: Record<string, unknown>[];
+      let altText: string;
+
+      if (settlement) {
+        altText = `${detail.trip.title} 結算報告`;
+        const transferRows: Record<string, unknown>[] = settlement.transfers.length > 0
+          ? settlement.transfers.map(t => ({
+              type: 'box', layout: 'horizontal',
+              contents: [
+                { type: 'text', text: `${nameOf.get(t.fromParticipantId) ?? t.fromParticipantId} → ${nameOf.get(t.toParticipantId) ?? t.toParticipantId}`, size: 'sm', color: '#333333', flex: 3, wrap: true },
+                { type: 'text', text: `$${t.amount}`, size: 'sm', weight: 'bold', color: '#e65100', align: 'end', flex: 1 },
+              ],
+              margin: 'sm',
+            }))
+          : [{ type: 'text', text: '所有人已結清', size: 'sm', color: '#27ae60', align: 'center', margin: 'sm' }];
+        bodyContents = [
+          { type: 'text', text: '轉帳明細', weight: 'bold', size: 'sm', color: '#888888' },
+          { type: 'separator', margin: 'sm' },
+          ...transferRows,
+        ];
+      } else {
+        altText = `${detail.trip.title} — 一起來記帳吧！`;
+        const participantNames = detail.participants.map(p => p.name).join('、');
+        bodyContents = [
+          { type: 'text', text: `目前 ${detail.participants.length} 位參與者`, size: 'sm', color: '#666666', wrap: true },
+          ...(participantNames ? [{ type: 'text', text: participantNames, size: 'xs', color: '#999999', margin: 'sm', wrap: true }] : []),
+          { type: 'text', text: '點擊下方按鈕查看行程、新增費用', size: 'sm', color: '#888888', margin: 'md', wrap: true },
+        ];
+      }
+
+      const flexMessage = {
+        type: 'flex',
+        altText,
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box', layout: 'vertical',
+            contents: [
+              { type: 'text', text: detail.trip.title, weight: 'bold', size: 'lg', color: '#333333' },
+              { type: 'text', text: `${detail.trip.startDate} ~ ${detail.trip.endDate}`, size: 'xs', color: '#999999', margin: 'sm' },
+              ...(settlement ? [{ type: 'text', text: '已結算', size: 'xs', color: '#e65100', weight: 'bold', margin: 'sm' }] : []),
+            ],
+            paddingAll: '20px',
+            backgroundColor: '#F5F7FA',
+          },
+          body: { type: 'box', layout: 'vertical', contents: bodyContents },
+          footer: {
+            type: 'box', layout: 'vertical',
+            contents: [{
+              type: 'button',
+              action: { type: 'uri', label: settlement ? '查看結算' : '查看行程', uri: tripUrl },
+              style: 'primary', color: '#1DB446',
+            }],
+          },
+        },
+      };
+
+      if (liff.isApiAvailable('shareTargetPicker')) {
+        await liff.shareTargetPicker([flexMessage as never]);
+      } else {
+        // shareTargetPicker unavailable (opened via direct URL, not LIFF URL)
+        // Fall back to clipboard copy
+        await navigator.clipboard.writeText(tripUrl);
+        alert('已複製行程連結！');
+      }
+    } catch (err) {
+      console.error('[share] error', err);
+      alert(`分享失敗：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSharing(false);
+    }
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const withRefresh = <T extends (...args: any[]) => Promise<unknown>>(fn: T) =>
@@ -50,8 +139,15 @@ export function TripDetail() {
       <button onClick={() => navigate('/camping')} style={cs.backBtn}>← 返回</button>
 
       <div style={styles.header}>
-        <h1 style={styles.title}>{detail.trip.title}</h1>
-        <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
+        <div style={styles.headerTop}>
+          <div style={{ flex: 1 }}>
+            <h1 style={styles.title}>{detail.trip.title}</h1>
+            <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
+          </div>
+          <button onClick={handleShare} disabled={sharing} style={styles.shareBtn}>
+            {sharing ? '...' : '分享'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -126,7 +222,6 @@ export function TripDetail() {
             participants={detail.participants}
             settlement={detail.settlement}
             currentEmployeeId={employeeId}
-            tenantId={tenantId}
             onSettle={withRefresh(async () => {
               await mutations.post('/settle', {});
             })}
@@ -139,8 +234,14 @@ export function TripDetail() {
 
 const styles: Record<string, React.CSSProperties> = {
   header: { marginBottom: 16 },
+  headerTop: { display: 'flex', alignItems: 'center', gap: 12 },
   title: { fontSize: 22, margin: '8px 0 4px', fontWeight: 700 },
   dateRange: { fontSize: 13, color: '#888' },
+  shareBtn: {
+    padding: '8px 16px', border: 'none', borderRadius: 8,
+    backgroundColor: '#1DB446', color: '#fff', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0,
+  },
   tabBar: {
     display: 'flex', borderBottom: '2px solid #f0f0f0', marginBottom: 16,
   },

@@ -541,12 +541,27 @@ export function buildDigitalIdFlexMessage(employeeId: string): LineMessage {
 export function buildServicesMenuFlexMessage(options?: {
   isAdmin?: boolean;
   liffWebBaseUrl?: string;
+  liffId?: string;
   tenantId?: string;
   accessToken?: string;
   refreshToken?: string;
 }): LineMessage {
   const liffWebBase = options?.liffWebBaseUrl ?? 'https://miniapp.line.me/';
   const enabledServices = ['volunteer', 'massage', 'camping'];
+
+  const buildServiceUrl = (path: string): string => {
+    const params = new URLSearchParams();
+    if (options?.tenantId) params.set('tenantId', options.tenantId);
+    if (options?.accessToken) params.set('accessToken', options.accessToken);
+    if (options?.refreshToken) params.set('refreshToken', options.refreshToken);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
+    // Use LIFF URL when liffId is available — enables isInClient + shareTargetPicker
+    if (options?.liffId) {
+      return `https://liff.line.me/${options.liffId}${path}${qs}`;
+    }
+    return `${liffWebBase}${path}${qs}`;
+  };
 
   const allServices = [
     { id: 'volunteer', label: '志工活動', desc: '查詢與報名志工活動', path: '/volunteer' },
@@ -634,9 +649,7 @@ export function buildServicesMenuFlexMessage(options?: {
               ? {
                   type: 'uri',
                   label: svc.label,
-                  uri: options?.accessToken
-                    ? `${liffWebBase}${svc.path}?tenantId=${encodeURIComponent(options.tenantId ?? '')}&accessToken=${encodeURIComponent(options.accessToken)}${options.refreshToken ? `&refreshToken=${encodeURIComponent(options.refreshToken)}` : ''}`
-                    : `${liffWebBase}${svc.path}`,
+                  uri: buildServiceUrl(svc.path),
                 }
               : {
                   type: 'postback',
@@ -653,9 +666,7 @@ export function buildServicesMenuFlexMessage(options?: {
   }
 
   if (options?.isAdmin) {
-    const adminUrl = options.accessToken
-      ? `${liffWebBase}/admin?tenantId=${encodeURIComponent(options.tenantId ?? '')}&accessToken=${encodeURIComponent(options.accessToken)}${options.refreshToken ? `&refreshToken=${encodeURIComponent(options.refreshToken)}` : ''}`
-      : `${liffWebBase}/admin`;
+    const adminUrl = buildServiceUrl('/admin');
 
     bubbles.push({
       type: 'bubble',

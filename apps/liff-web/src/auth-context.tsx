@@ -176,6 +176,16 @@ export function AuthProvider({
     return () => clearTimeout(timer);
   }, [accessToken, refreshAccessToken]);
 
+  // Always init LIFF SDK when liffId is available — needed for shareTargetPicker etc.
+  const liffInitRef = useRef(false);
+  useEffect(() => {
+    if (!liffId || liffInitRef.current) return;
+    liffInitRef.current = true;
+    liff.init({ liffId }).catch(err => {
+      console.warn('[AuthProvider] liff.init failed:', err);
+    });
+  }, [liffId]);
+
   // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK.
   // liffAttemptedRef is set synchronously to prevent re-entry when setAuthStatus
   // triggers a re-render and React re-runs this effect. No cleanup/cancelled pattern
@@ -187,7 +197,8 @@ export function AuthProvider({
 
     (async () => {
       try {
-        await liff.init({ liffId });
+        // liff.init is already called above; wait for it to complete
+        await liff.ready;
 
         if (!liff.isLoggedIn()) {
           setAuthStatus('none');

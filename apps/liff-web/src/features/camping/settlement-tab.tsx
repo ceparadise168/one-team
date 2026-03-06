@@ -8,14 +8,11 @@ interface Props {
   participants: TripParticipant[];
   settlement: Settlement | null;
   currentEmployeeId: string;
-  tenantId: string;
   onSettle: () => Promise<void>;
 }
 
-export function SettlementTab({ trip, participants, settlement, currentEmployeeId, tenantId, onSettle }: Props) {
+export function SettlementTab({ trip, participants, settlement, currentEmployeeId, onSettle }: Props) {
   const [settling, setSettling] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const liffId = import.meta.env.VITE_LIFF_ID ?? '';
 
   const nameOf = new Map(participants.map(p => [p.participantId, p.name]));
   const isCreator = trip.creatorEmployeeId === currentEmployeeId;
@@ -26,16 +23,6 @@ export function SettlementTab({ trip, participants, settlement, currentEmployeeI
     try {
       await onSettle();
     } finally { setSettling(false); }
-  };
-
-  const handleCopyLink = () => {
-    const url = liffId
-      ? `https://liff.line.me/${liffId}/camping/${trip.tripId}?tenantId=${tenantId}`
-      : `${window.location.origin}/camping/${trip.tripId}?tenantId=${tenantId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
   };
 
   if (!settlement) {
@@ -60,9 +47,6 @@ export function SettlementTab({ trip, participants, settlement, currentEmployeeI
   return (
     <div>
       <SettlementSummary settlement={settlement} nameOf={nameOf} />
-      <button onClick={handleCopyLink} style={styles.shareBtn}>
-        {copied ? '已複製!' : '複製分享連結'}
-      </button>
     </div>
   );
 }
@@ -77,9 +61,4 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   notCreatorHint: { textAlign: 'center', fontSize: 13, color: '#999' },
-  shareBtn: {
-    width: '100%', padding: '12px 0', border: '1px solid #1DB446', borderRadius: 8,
-    backgroundColor: '#fff', color: '#1DB446', fontSize: 14, fontWeight: 600,
-    cursor: 'pointer', marginTop: 20,
-  },
 };

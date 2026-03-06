@@ -176,31 +176,27 @@ export function AuthProvider({
     return () => clearTimeout(timer);
   }, [accessToken, refreshAccessToken]);
 
-  // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK
-  // Note: liffAttemptedRef is set inside the async (not synchronously) so that
-  // React StrictMode's double-mount can re-run the effect after the first is cancelled.
+  // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK.
+  // liffAttemptedRef is set synchronously to prevent re-entry when setAuthStatus
+  // triggers a re-render and React re-runs this effect. No cleanup/cancelled pattern
+  // is needed because the ref guard is sufficient.
   useEffect(() => {
     if (authStatus !== 'none' || !tenantId || !liffId || liffAttemptedRef.current) return;
-
-    let cancelled = false;
+    liffAttemptedRef.current = true;
     setAuthStatus('authenticating');
 
     (async () => {
       try {
         await liff.init({ liffId });
 
-        if (cancelled) return;
-
         if (!liff.isLoggedIn()) {
-          liffAttemptedRef.current = true;
-          if (!cancelled) setAuthStatus('none');
+          setAuthStatus('none');
           return;
         }
 
         const idToken = liff.getIDToken();
         if (!idToken) {
-          liffAttemptedRef.current = true;
-          if (!cancelled) setAuthStatus('none');
+          setAuthStatus('none');
           return;
         }
 
@@ -211,16 +207,12 @@ export function AuthProvider({
         });
 
         if (!res.ok) {
-          liffAttemptedRef.current = true;
-          if (!cancelled) setAuthStatus('none');
+          setAuthStatus('none');
           return;
         }
 
         const tokens = await res.json() as { accessToken: string; refreshToken: string };
 
-        if (cancelled) return;
-
-        liffAttemptedRef.current = true;
         setAccessToken(tokens.accessToken);
         refreshTokenRef.current = tokens.refreshToken;
         setAuthStatus('authenticated');
@@ -232,12 +224,9 @@ export function AuthProvider({
         } catch { /* private browsing */ }
       } catch (err) {
         console.warn('[AuthProvider] LIFF auto-login failed:', err);
-        liffAttemptedRef.current = true;
-        if (!cancelled) setAuthStatus('none');
+        setAuthStatus('none');
       }
     })();
-
-    return () => { cancelled = true; };
   }, [authStatus, tenantId, liffId, apiBaseUrl]);
 
   const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };

@@ -10,6 +10,7 @@ interface AuthContextValue {
   tenantId: string;
   apiBaseUrl: string;
   authStatus: AuthStatus;
+  liffId: string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -240,7 +241,7 @@ export function AuthProvider({
     })();
   }, [authStatus, tenantId, liffId, apiBaseUrl]);
 
-  const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };
+  const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus, liffId };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

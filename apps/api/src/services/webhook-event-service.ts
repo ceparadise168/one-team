@@ -275,10 +275,14 @@ export class WebhookEventService {
     const lineUserId = event.source.userId;
     if (!lineUserId || !event.replyToken) return;
 
-    const binding = await this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId);
-    const isAdmin = await this.checkAdminPermission(tenantId, lineUserId);
-    const tenant = await this.tenantRepository.findById(tenantId);
+    const [binding, tenant] = await Promise.all([
+      this.employeeBindingRepository.findActiveByLineUserId(tenantId, lineUserId),
+      this.tenantRepository.findById(tenantId),
+    ]);
     const liffId = tenant?.line.resources.liffId;
+    const permissions = binding?.permissions ?? {};
+    const isAdmin = binding?.accessStatus === 'APPROVED' &&
+      (permissions.canInvite === true || permissions.canRemove === true);
 
     let accessToken: string | undefined;
     let refreshToken: string | undefined;

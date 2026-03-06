@@ -22,13 +22,12 @@ const TAB_LABELS: Record<Tab, string> = {
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
-  const { apiBaseUrl, accessToken, employeeId, tenantId } = useAuth();
+  const { apiBaseUrl, accessToken, employeeId, tenantId, liffId } = useAuth();
   const { detail, loading, error, refresh } = useTripDetail(apiBaseUrl, accessToken, tripId!);
   const mutations = useTripMutations(apiBaseUrl, accessToken, tripId!);
   const [activeTab, setActiveTab] = useState<Tab>('participants');
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
-  const liffId = import.meta.env.VITE_LIFF_ID ?? '';
 
   if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
   if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
@@ -36,16 +35,14 @@ export function TripDetail() {
 
   const isOpen = detail.trip.status === 'OPEN';
 
-  const getTripUrl = () => liffId
-    ? `https://liff.line.me/${liffId}/camping/${detail.trip.tripId}?tenantId=${tenantId}`
-    : `${window.location.origin}/camping/${detail.trip.tripId}?tenantId=${tenantId}`;
-
   const handleShare = async () => {
     setSharing(true);
     try {
       // Ensure LIFF SDK is fully initialized before using shareTargetPicker
       await liff.ready;
-      const tripUrl = getTripUrl();
+      const tripUrl = liffId
+        ? `https://liff.line.me/${liffId}/camping/${detail.trip.tripId}?tenantId=${tenantId}`
+        : `${window.location.origin}/camping/${detail.trip.tripId}?tenantId=${tenantId}`;
       const nameOf = new Map(detail.participants.map(p => [p.participantId, p.name]));
       const settlement = detail.settlement;
 
@@ -107,7 +104,8 @@ export function TripDetail() {
       };
 
       if (liff.isApiAvailable('shareTargetPicker')) {
-        await liff.shareTargetPicker([flexMessage as never]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await liff.shareTargetPicker([flexMessage as any]);
       } else {
         // shareTargetPicker unavailable (opened via direct URL, not LIFF URL)
         // Fall back to clipboard copy
@@ -140,7 +138,7 @@ export function TripDetail() {
 
       <div style={styles.header}>
         <div style={styles.headerTop}>
-          <div style={{ flex: 1 }}>
+          <div style={styles.headerTitleBox}>
             <h1 style={styles.title}>{detail.trip.title}</h1>
             <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
           </div>
@@ -235,6 +233,7 @@ export function TripDetail() {
 const styles: Record<string, React.CSSProperties> = {
   header: { marginBottom: 16 },
   headerTop: { display: 'flex', alignItems: 'center', gap: 12 },
+  headerTitleBox: { flex: 1 },
   title: { fontSize: 22, margin: '8px 0 4px', fontWeight: 700 },
   dateRange: { fontSize: 13, color: '#888' },
   shareBtn: {

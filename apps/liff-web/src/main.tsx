@@ -22,10 +22,9 @@ import { TripDetail } from './features/camping/trip-detail';
 import { SharePage } from './features/camping/share-page';
 
 // LIFF v2 passes the path after the LIFF ID as ?liff.state=/path?query=...
-// Redirect to the actual path before React mounts.
+// Rewrite the URL in-place (no reload) so React Router sees the correct path.
 const liffState = new URLSearchParams(window.location.search).get('liff.state');
 if (liffState) {
-  // Preserve any non-liff.state query params (e.g. tenantId already at top level)
   const targetUrl = new URL(liffState, window.location.origin);
   // Merge top-level query params into the target (liff.state params take priority)
   const currentParams = new URLSearchParams(window.location.search);
@@ -33,7 +32,8 @@ if (liffState) {
   for (const [k, v] of currentParams) {
     if (!targetUrl.searchParams.has(k)) targetUrl.searchParams.set(k, v);
   }
-  window.location.replace(targetUrl.pathname + targetUrl.search);
+  // Use replaceState to avoid full page reload — preserves LIFF SDK context
+  window.history.replaceState(null, '', targetUrl.pathname + targetUrl.search);
 }
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';

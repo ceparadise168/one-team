@@ -101,6 +101,7 @@ export function AuthProvider({
   const tenantId = initial.tenantId;
   const refreshTokenRef = useRef(initial.refreshToken);
   const refreshingRef = useRef(false);
+  const liffAttemptedRef = useRef(false);
 
   const employeeId = extractEmployeeId(accessToken);
 
@@ -172,7 +173,8 @@ export function AuthProvider({
 
   // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK
   useEffect(() => {
-    if (authStatus !== 'none' || !tenantId || !liffId) return;
+    if (authStatus !== 'none' || !tenantId || !liffId || liffAttemptedRef.current) return;
+    liffAttemptedRef.current = true;
 
     let cancelled = false;
     setAuthStatus('authenticating');
@@ -222,7 +224,7 @@ export function AuthProvider({
     })();
 
     return () => { cancelled = true; };
-  }, [authStatus, tenantId, liffId, apiBaseUrl]);
+  }, [tenantId, liffId, apiBaseUrl]);
 
   const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };
 

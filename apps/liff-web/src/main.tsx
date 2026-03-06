@@ -21,6 +21,21 @@ import { CreateTrip } from './features/camping/create-trip';
 import { TripDetail } from './features/camping/trip-detail';
 import { SharePage } from './features/camping/share-page';
 
+// LIFF v2 passes the path after the LIFF ID as ?liff.state=/path?query=...
+// Redirect to the actual path before React mounts.
+const liffState = new URLSearchParams(window.location.search).get('liff.state');
+if (liffState) {
+  // Preserve any non-liff.state query params (e.g. tenantId already at top level)
+  const targetUrl = new URL(liffState, window.location.origin);
+  // Merge top-level query params into the target (liff.state params take priority)
+  const currentParams = new URLSearchParams(window.location.search);
+  currentParams.delete('liff.state');
+  for (const [k, v] of currentParams) {
+    if (!targetUrl.searchParams.has(k)) targetUrl.searchParams.set(k, v);
+  }
+  window.location.replace(targetUrl.pathname + targetUrl.search);
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const liffId = import.meta.env.VITE_LIFF_ID ?? '';
 

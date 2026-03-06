@@ -21,7 +21,7 @@ const TAB_LABELS: Record<Tab, string> = {
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
-  const { apiBaseUrl, accessToken, employeeId } = useAuth();
+  const { apiBaseUrl, accessToken, employeeId, tenantId } = useAuth();
   const { detail, loading, error, refresh } = useTripDetail(apiBaseUrl, accessToken, tripId!);
   const mutations = useTripMutations(apiBaseUrl, accessToken, tripId!);
   const [activeTab, setActiveTab] = useState<Tab>('participants');
@@ -126,6 +126,7 @@ export function TripDetail() {
             participants={detail.participants}
             settlement={detail.settlement}
             currentEmployeeId={employeeId}
+            tenantId={tenantId}
             onSettle={withRefresh(async () => {
               await mutations.post('/settle', {});
             })}

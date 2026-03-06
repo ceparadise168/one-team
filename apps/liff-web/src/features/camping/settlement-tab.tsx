@@ -8,12 +8,14 @@ interface Props {
   participants: TripParticipant[];
   settlement: Settlement | null;
   currentEmployeeId: string;
+  tenantId: string;
   onSettle: () => Promise<void>;
 }
 
-export function SettlementTab({ trip, participants, settlement, currentEmployeeId, onSettle }: Props) {
+export function SettlementTab({ trip, participants, settlement, currentEmployeeId, tenantId, onSettle }: Props) {
   const [settling, setSettling] = useState(false);
   const [copied, setCopied] = useState(false);
+  const liffId = import.meta.env.VITE_LIFF_ID ?? '';
 
   const nameOf = new Map(participants.map(p => [p.participantId, p.name]));
   const isCreator = trip.creatorEmployeeId === currentEmployeeId;
@@ -27,7 +29,9 @@ export function SettlementTab({ trip, participants, settlement, currentEmployeeI
   };
 
   const handleCopyLink = () => {
-    const url = `${window.location.origin}/camping/${trip.tripId}/share`;
+    const url = liffId
+      ? `https://liff.line.me/${liffId}/camping/${trip.tripId}?tenantId=${tenantId}`
+      : `${window.location.origin}/camping/${trip.tripId}?tenantId=${tenantId}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

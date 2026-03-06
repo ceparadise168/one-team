@@ -218,13 +218,14 @@ export function AuthProvider({
           sessionStorage.setItem(STORAGE_KEY_REFRESH, tokens.refreshToken);
           sessionStorage.setItem(STORAGE_KEY_TENANT, tenantId);
         } catch { /* private browsing */ }
-      } catch {
+      } catch (err) {
+        console.warn('[AuthProvider] LIFF auto-login failed:', err);
         if (!cancelled) setAuthStatus('none');
       }
     })();
 
     return () => { cancelled = true; };
-  }, [tenantId, liffId, apiBaseUrl]);
+  }, [authStatus, tenantId, liffId, apiBaseUrl]);
 
   const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };
 

@@ -1,7 +1,8 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import liff from '@line/liff';
 
-export type AuthStatus = 'authenticated' | 'expired' | 'none';
+export type AuthStatus = 'authenticated' | 'expired' | 'none' | 'authenticating';
 
 interface AuthContextValue {
   accessToken: string;
@@ -85,9 +86,11 @@ function getInitialTokens(): { accessToken: string; refreshToken: string; tenant
 export function AuthProvider({
   children,
   apiBaseUrl,
+  liffId,
 }: {
   children: ReactNode;
   apiBaseUrl: string;
+  liffId: string;
 }) {
   const initial = getInitialTokens();
 
@@ -166,6 +169,60 @@ export function AuthProvider({
 
     return () => clearTimeout(timer);
   }, [accessToken, refreshAccessToken]);
+
+  // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK
+  useEffect(() => {
+    if (authStatus !== 'none' || !tenantId || !liffId) return;
+
+    let cancelled = false;
+    setAuthStatus('authenticating');
+
+    (async () => {
+      try {
+        await liff.init({ liffId });
+
+        if (!liff.isLoggedIn()) {
+          if (!cancelled) setAuthStatus('none');
+          return;
+        }
+
+        const idToken = liff.getIDToken();
+        if (!idToken) {
+          if (!cancelled) setAuthStatus('none');
+          return;
+        }
+
+        const res = await fetch(`${apiBaseUrl}/v1/public/auth/line-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId, lineIdToken: idToken }),
+        });
+
+        if (!res.ok) {
+          if (!cancelled) setAuthStatus('none');
+          return;
+        }
+
+        const tokens = await res.json() as { accessToken: string; refreshToken: string };
+
+        if (cancelled) return;
+
+        setAccessToken(tokens.accessToken);
+        refreshTokenRef.current = tokens.refreshToken;
+        setAuthStatus('authenticated');
+
+        try {
+          sessionStorage.setItem(STORAGE_KEY_ACCESS, tokens.accessToken);
+          sessionStorage.setItem(STORAGE_KEY_REFRESH, tokens.refreshToken);
+          sessionStorage.setItem(STORAGE_KEY_TENANT, tenantId);
+        } catch { /* private browsing */ }
+      } catch {
+        if (!cancelled) setAuthStatus('none');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [authStatus, tenantId, liffId, apiBaseUrl]);
 
   const value = { accessToken, employeeId, tenantId, apiBaseUrl, authStatus };
 

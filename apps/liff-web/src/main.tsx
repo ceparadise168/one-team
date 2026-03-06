@@ -30,7 +30,7 @@ function App() {
 
   return (
     <BrowserRouter>
-      <AuthProvider apiBaseUrl={apiBaseUrl}>
+      <AuthProvider apiBaseUrl={apiBaseUrl} liffId={liffId}>
         <Routes>
           <Route
             path="/register"

@@ -4,6 +4,18 @@ import { useAuth } from './auth-context';
 export function AuthGuard({ children }: { children: ReactNode }) {
   const { authStatus } = useAuth();
 
+  if (authStatus === 'authenticating') {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <p style={styles.icon}>&#x23F3;</p>
+          <h2 style={styles.title}>登入中</h2>
+          <p style={styles.desc}>正在透過 LINE 自動登入，請稍候...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (authStatus === 'none') {
     return (
       <div style={styles.container}>

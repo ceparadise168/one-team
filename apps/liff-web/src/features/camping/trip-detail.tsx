@@ -251,6 +251,8 @@ export function TripDetail() {
             participants={detail.participants}
             settlement={detail.settlement}
             currentEmployeeId={employeeId}
+            apiBaseUrl={apiBaseUrl}
+            accessToken={accessToken}
             onSettle={withRefresh(async () => {
               await mutations.post('/settle', {});
             })}

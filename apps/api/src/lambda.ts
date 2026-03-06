@@ -1304,6 +1304,15 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, { settlement }, responseOptions);
     }
 
+    // --- Camping: Settlement preview ---
+    const campingSettlementPreviewMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/settlement\/preview$/);
+    if (campingSettlementPreviewMatch && method === 'GET') {
+      const tripId = campingSettlementPreviewMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const preview = await campingSplitService.previewSettlement(tripId, principal.tenantId);
+      return jsonResponse(200, preview, responseOptions);
+    }
+
     // --- Camping: Public summary (no auth) ---
     const campingSummaryMatch = path.match(/^\/v1\/public\/camping\/trips\/([^/]+)\/summary$/);
     if (campingSummaryMatch && method === 'GET') {

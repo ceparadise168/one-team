@@ -5,15 +5,16 @@ import type React from 'react';
 interface Props {
   settlement: Settlement;
   nameOf: Map<string, string>;
+  preview?: boolean;
 }
 
-export function SettlementSummary({ settlement, nameOf }: Props) {
+export function SettlementSummary({ settlement, nameOf, preview }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <>
-      <div style={styles.settledBanner}>
-        已結算 ({new Date(settlement.settledAt).toLocaleDateString('zh-TW')})
+      <div style={preview ? styles.previewBanner : styles.settledBanner}>
+        {preview ? '即時預覽（尚未結算）' : `已結算 (${new Date(settlement.settledAt).toLocaleDateString('zh-TW')})`}
       </div>
 
       <div style={styles.sectionTitle}>轉帳指示</div>
@@ -69,6 +70,11 @@ const styles: Record<string, React.CSSProperties> = {
   settledBanner: {
     padding: '10px 16px', backgroundColor: '#e8f5e9', borderRadius: 8,
     textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#2e7d32',
+    marginBottom: 16,
+  },
+  previewBanner: {
+    padding: '10px 16px', backgroundColor: '#fff3e0', borderRadius: 8,
+    textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#e65100',
     marginBottom: 16,
   },
   sectionTitle: { fontSize: 14, fontWeight: 700, color: '#333', marginBottom: 8, marginTop: 16 },

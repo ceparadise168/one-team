@@ -282,6 +282,19 @@ export class CampingSplitService {
     return { trip, participants, campSites, expenses, settlement };
   }
 
+  async previewSettlement(tripId: string, callerTenantId?: string) {
+    const trip = await this.getTrip(tripId);
+    if (callerTenantId && trip.tenantId !== callerTenantId) {
+      throw new ForbiddenError('Cannot access trip from different tenant');
+    }
+    const [participants, campSites, expenses] = await Promise.all([
+      this.repo.listParticipants(tripId),
+      this.repo.listCampSites(tripId),
+      this.repo.listExpenses(tripId),
+    ]);
+    return calculateSettlement(participants, campSites, expenses);
+  }
+
   async getPublicSummary(tripId: string) {
     const trip = await this.getTrip(tripId);
     const [participants, settlement] = await Promise.all([

@@ -450,7 +450,7 @@ const massageBookingService = new MassageBookingService(
 const campingRepository = process.env.USE_DYNAMODB_REPOSITORIES === 'true'
   ? new DynamoDbCampingRepository(dynamoDbClient!, process.env.MASSAGE_TABLE_NAME!)
   : new InMemoryCampingRepository();
-const campingSplitService = new CampingSplitService(campingRepository, linePlatformClient, { now: () => new Date() });
+const campingSplitService = new CampingSplitService(campingRepository, linePlatformClient, { now: () => new Date() }, employeeBindingRepository);
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const startTime = Date.now();
@@ -1270,6 +1270,21 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         await campingSplitService.removeExpense(tripId, expenseId);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
+    }
+
+    // --- Camping: Join trip ---
+    const campingJoinMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/join$/);
+    if (campingJoinMatch && method === 'POST') {
+      const tripId = campingJoinMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = JSON.parse(event.body || '{}');
+      const result = await campingSplitService.joinTrip({
+        tripId,
+        tenantId: principal.tenantId,
+        employeeId: principal.employeeId,
+        name: body.name,
+      });
+      return jsonResponse(200, result, responseOptions);
     }
 
     // --- Camping: Settlement ---

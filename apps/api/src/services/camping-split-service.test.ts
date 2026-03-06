@@ -2,8 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { CampingSplitService } from './camping-split-service.js';
 import { InMemoryCampingRepository } from '../repositories/camping-repository.js';
+import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
-import { ForbiddenError } from '../errors.js';
+import { ForbiddenError, ValidationError } from '../errors.js';
 
 const TENANT = 'test-tenant';
 
@@ -12,6 +13,14 @@ function createContext(nowStr = '2026-03-01T09:00:00.000Z') {
   const lineClient = new StubLinePlatformClient();
   const service = new CampingSplitService(repo, lineClient, { now: () => new Date(nowStr) });
   return { service, repo, lineClient };
+}
+
+function createContextWithBindings(nowStr = '2026-03-01T09:00:00.000Z') {
+  const repo = new InMemoryCampingRepository();
+  const lineClient = new StubLinePlatformClient();
+  const bindingRepo = new InMemoryEmployeeBindingRepository();
+  const service = new CampingSplitService(repo, lineClient, { now: () => new Date(nowStr) }, bindingRepo);
+  return { service, repo, lineClient, bindingRepo };
 }
 
 describe('CampingSplitService — Trip CRUD', () => {
@@ -110,5 +119,61 @@ describe('CampingSplitService — Settlement', () => {
 
     const trip = await repo.findTripById(tripId);
     assert.equal(trip!.status, 'SETTLED');
+  });
+});
+
+describe('CampingSplitService — joinTrip', () => {
+  const tripInput = {
+    tenantId: TENANT, title: 'Spring Camp', startDate: '2026-04-01', endDate: '2026-04-03',
+    creatorEmployeeId: 'EMP01', creatorName: 'Alice', creatorLineUserId: 'line-alice',
+  };
+
+  it('joins a trip and resolves lineUserId from binding', async () => {
+    const { service, repo, bindingRepo } = createContextWithBindings();
+    const { tripId } = await service.createTrip(tripInput);
+
+    await bindingRepo.upsert({
+      tenantId: TENANT, employeeId: 'EMP02', lineUserId: 'line-bob',
+      employmentStatus: 'ACTIVE', boundAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const result = await service.joinTrip({ tripId, tenantId: TENANT, employeeId: 'EMP02', name: 'Bob' });
+    assert.ok(result.participantId);
+
+    const participant = await repo.findParticipantByEmployeeId(tripId, 'EMP02');
+    assert.ok(participant);
+    assert.equal(participant.name, 'Bob');
+    assert.equal(participant.lineUserId, 'line-bob');
+    assert.equal(participant.splitWeight, 1);
+  });
+
+  it('is idempotent — returns existing participantId on duplicate join', async () => {
+    const { service } = createContextWithBindings();
+    const { tripId } = await service.createTrip(tripInput);
+
+    const first = await service.joinTrip({ tripId, tenantId: TENANT, employeeId: 'EMP02', name: 'Bob' });
+    const second = await service.joinTrip({ tripId, tenantId: TENANT, employeeId: 'EMP02', name: 'Bob' });
+    assert.equal(first.participantId, second.participantId);
+  });
+
+  it('rejects joining a settled trip', async () => {
+    const { service } = createContextWithBindings();
+    const { tripId } = await service.createTrip(tripInput);
+    await service.settle(tripId, 'EMP01', TENANT);
+
+    await assert.rejects(
+      () => service.joinTrip({ tripId, tenantId: TENANT, employeeId: 'EMP02', name: 'Bob' }),
+      (err: Error) => err instanceof ValidationError,
+    );
+  });
+
+  it('rejects cross-tenant join', async () => {
+    const { service } = createContextWithBindings();
+    const { tripId } = await service.createTrip(tripInput);
+
+    await assert.rejects(
+      () => service.joinTrip({ tripId, tenantId: 'other-tenant', employeeId: 'EMP02', name: 'Bob' }),
+      (err: Error) => err instanceof ForbiddenError,
+    );
   });
 });

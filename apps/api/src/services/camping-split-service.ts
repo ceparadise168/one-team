@@ -10,6 +10,7 @@ import type {
 } from '../domain/camping.js';
 import { calculateSettlement } from '../domain/camping-settlement.js';
 import type { CampingRepository } from '../repositories/camping-repository.js';
+import type { EmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import type { LinePlatformClient } from '../line/line-platform-client.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
 
@@ -48,6 +49,13 @@ interface AddExpenseInput {
   splitAmong: string[] | null;
 }
 
+interface JoinTripInput {
+  tripId: string;
+  tenantId: string;
+  employeeId: string;
+  name: string;
+}
+
 interface AddCampSiteInput {
   name: string;
   cost: number;
@@ -60,6 +68,7 @@ export class CampingSplitService {
     private readonly repo: CampingRepository,
     private readonly lineClient: LinePlatformClient,
     private readonly options: ServiceOptions,
+    private readonly employeeBindingRepo?: EmployeeBindingRepository,
   ) {}
 
   async createTrip(input: CreateTripInput): Promise<{ tripId: string }> {
@@ -288,6 +297,36 @@ export class CampingSplitService {
       participantNames,
       settlement,
     };
+  }
+
+  async joinTrip(input: JoinTripInput): Promise<{ participantId: string }> {
+    const trip = await this.requireOpen(input.tripId, input.tenantId);
+
+    // Idempotent: if already a participant, return existing
+    const existing = await this.repo.findParticipantByEmployeeId(input.tripId, input.employeeId);
+    if (existing) return { participantId: existing.participantId };
+
+    // Best-effort lineUserId lookup
+    let lineUserId: string | null = null;
+    if (this.employeeBindingRepo) {
+      const binding = await this.employeeBindingRepo.findActiveByEmployeeId(trip.tenantId, input.employeeId);
+      if (binding) lineUserId = binding.lineUserId;
+    }
+
+    const participantId = randomUUID().slice(0, 12);
+    await this.repo.createParticipant({
+      tripId: input.tripId,
+      participantId,
+      name: input.name,
+      employeeId: input.employeeId,
+      lineUserId,
+      splitWeight: 1,
+      householdId: null,
+      isHouseholdHead: false,
+      settleAsHousehold: false,
+    });
+
+    return { participantId };
   }
 
   private async requireOpen(tripId: string, callerTenantId?: string): Promise<CampingTripRecord> {

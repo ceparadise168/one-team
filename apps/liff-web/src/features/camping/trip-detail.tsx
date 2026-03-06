@@ -28,12 +28,38 @@ export function TripDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('participants');
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [joining, setJoining] = useState(false);
 
   if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
   if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
   if (!detail) return <div style={cs.container}><p style={cs.error}>找不到行程</p></div>;
 
   const isOpen = detail.trip.status === 'OPEN';
+  const isParticipant = detail.participants.some(p => p.employeeId === employeeId);
+  const showJoinButton = isOpen && !isParticipant && !!employeeId;
+
+  const handleJoin = async () => {
+    setJoining(true);
+    try {
+      let name: string | null = null;
+      try {
+        const profile = await liff.getProfile();
+        name = profile.displayName;
+      } catch {
+        // LIFF profile unavailable
+      }
+      if (!name) {
+        name = prompt('請輸入你的名字');
+      }
+      if (!name) return;
+      await mutations.post('/join', { name });
+      refresh();
+    } catch (err) {
+      setMutationError((err as Error).message);
+    } finally {
+      setJoining(false);
+    }
+  };
 
   const handleShare = async () => {
     setSharing(true);
@@ -142,6 +168,11 @@ export function TripDetail() {
             <h1 style={styles.title}>{detail.trip.title}</h1>
             <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
           </div>
+          {showJoinButton && (
+            <button onClick={handleJoin} disabled={joining} style={styles.joinBtn}>
+              {joining ? '...' : '加入行程'}
+            </button>
+          )}
           <button onClick={handleShare} disabled={sharing} style={styles.shareBtn}>
             {sharing ? '...' : '分享'}
           </button>
@@ -236,6 +267,11 @@ const styles: Record<string, React.CSSProperties> = {
   headerTitleBox: { flex: 1 },
   title: { fontSize: 22, margin: '8px 0 4px', fontWeight: 700 },
   dateRange: { fontSize: 13, color: '#888' },
+  joinBtn: {
+    padding: '8px 16px', border: 'none', borderRadius: 8,
+    backgroundColor: '#FF9800', color: '#fff', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0,
+  },
   shareBtn: {
     padding: '8px 16px', border: 'none', borderRadius: 8,
     backgroundColor: '#1DB446', color: '#fff', fontSize: 13, fontWeight: 600,

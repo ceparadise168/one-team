@@ -177,9 +177,10 @@ export function AuthProvider({
   }, [accessToken, refreshAccessToken]);
 
   // LIFF auto-login: when no tokens are available but inside LINE, use LIFF SDK
+  // Note: liffAttemptedRef is set inside the async (not synchronously) so that
+  // React StrictMode's double-mount can re-run the effect after the first is cancelled.
   useEffect(() => {
     if (authStatus !== 'none' || !tenantId || !liffId || liffAttemptedRef.current) return;
-    liffAttemptedRef.current = true;
 
     let cancelled = false;
     setAuthStatus('authenticating');
@@ -188,13 +189,17 @@ export function AuthProvider({
       try {
         await liff.init({ liffId });
 
+        if (cancelled) return;
+
         if (!liff.isLoggedIn()) {
+          liffAttemptedRef.current = true;
           if (!cancelled) setAuthStatus('none');
           return;
         }
 
         const idToken = liff.getIDToken();
         if (!idToken) {
+          liffAttemptedRef.current = true;
           if (!cancelled) setAuthStatus('none');
           return;
         }
@@ -206,6 +211,7 @@ export function AuthProvider({
         });
 
         if (!res.ok) {
+          liffAttemptedRef.current = true;
           if (!cancelled) setAuthStatus('none');
           return;
         }
@@ -214,6 +220,7 @@ export function AuthProvider({
 
         if (cancelled) return;
 
+        liffAttemptedRef.current = true;
         setAccessToken(tokens.accessToken);
         refreshTokenRef.current = tokens.refreshToken;
         setAuthStatus('authenticated');
@@ -225,6 +232,7 @@ export function AuthProvider({
         } catch { /* private browsing */ }
       } catch (err) {
         console.warn('[AuthProvider] LIFF auto-login failed:', err);
+        liffAttemptedRef.current = true;
         if (!cancelled) setAuthStatus('none');
       }
     })();

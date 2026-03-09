@@ -48,6 +48,7 @@ const LIFF_ID = process.env.LIFF_ID;
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const TABLE_NAME = process.env.TABLE_NAME ?? 'one-team-dev-tenants';
 const AWS_REGION = process.env.AWS_REGION ?? 'ap-northeast-1';
+const DEFAULT_TENANT_ID = 'tenant_bcf4cb8eb630';
 
 // Derive employees table from tenants table (one-team-dev-tenants → one-team-dev-employees)
 const EMPLOYEES_TABLE_NAME = TABLE_NAME.replace(/-tenants$/, '-employees');
@@ -157,7 +158,10 @@ function buildPendingMenu() {
     areas: [
       {
         bounds: { x: 0, y: 0, width: 833, height: 843 },
-        action: { type: 'postback', data: 'action=request_access', displayText: '申請開通' }
+        action: {
+          type: 'uri',
+          uri: `${liffBase}/register?tenantId=${DEFAULT_TENANT_ID}`
+        }
       },
       {
         bounds: { x: 833, y: 0, width: 834, height: 843 },

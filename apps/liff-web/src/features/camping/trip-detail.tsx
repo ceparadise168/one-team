@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import liff from '@line/liff';
 import { useAuth } from '../../auth-context';
-import { useTripDetail, useTripMutations } from './use-camping';
+import { useTripDetail, useTripMutations, updateTripApi } from './use-camping';
 import { ParticipantsTab } from './participants-tab';
 import { CampSitesTab } from './campsites-tab';
 import { ExpensesTab } from './expenses-tab';
@@ -29,14 +29,50 @@ export function TripDetail() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [editCreator, setEditCreator] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
   if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
   if (!detail) return <div style={cs.container}><p style={cs.error}>找不到行程</p></div>;
 
   const isOpen = detail.trip.status === 'OPEN';
+  const isCreator = detail.trip.creatorEmployeeId === employeeId;
   const isParticipant = detail.participants.some(p => p.employeeId === employeeId);
   const showJoinButton = isOpen && !isParticipant && !!employeeId;
+  const myName = detail.participants.find(p => p.employeeId === employeeId)?.name ?? employeeId;
+
+  const startEditing = () => {
+    setEditTitle(detail.trip.title);
+    setEditStartDate(detail.trip.startDate);
+    setEditEndDate(detail.trip.endDate);
+    setEditCreator(detail.trip.creatorEmployeeId);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setEditSubmitting(true);
+    try {
+      setMutationError(null);
+      await updateTripApi(apiBaseUrl, accessToken, tripId!, {
+        title: editTitle,
+        startDate: editStartDate,
+        endDate: editEndDate,
+        creatorEmployeeId: editCreator !== detail.trip.creatorEmployeeId ? editCreator : undefined,
+        actorName: myName,
+      });
+      setEditing(false);
+      refresh();
+    } catch (err) {
+      setMutationError((err as Error).message);
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
 
   const handleJoin = async () => {
     setJoining(true);
@@ -163,20 +199,46 @@ export function TripDetail() {
       <button onClick={() => navigate('/camping')} style={cs.backBtn}>← 返回</button>
 
       <div style={styles.header}>
-        <div style={styles.headerTop}>
-          <div style={styles.headerTitleBox}>
-            <h1 style={styles.title}>{detail.trip.title}</h1>
-            <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
+        {editing ? (
+          <div style={cs.formCard}>
+            <div style={cs.formTitle}>編輯行程</div>
+            <input style={cs.input} placeholder="行程名稱" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input style={{ ...cs.input, flex: 1 }} type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
+              <input style={{ ...cs.input, flex: 1 }} type="date" value={editEndDate} onChange={e => setEditEndDate(e.target.value)} />
+            </div>
+            <div style={cs.fieldLabel}>建立者（轉移）</div>
+            <select style={cs.input} value={editCreator} onChange={e => setEditCreator(e.target.value)}>
+              {detail.participants.filter(p => p.employeeId).map(p => (
+                <option key={p.participantId} value={p.employeeId!}>{p.name}</option>
+              ))}
+            </select>
+            <div style={cs.formActions}>
+              <button onClick={() => setEditing(false)} style={cs.cancelBtn}>取消</button>
+              <button onClick={handleSaveEdit} disabled={editSubmitting} style={cs.confirmBtn}>
+                {editSubmitting ? '儲存中...' : '儲存'}
+              </button>
+            </div>
           </div>
-          {showJoinButton && (
-            <button onClick={handleJoin} disabled={joining} style={styles.joinBtn}>
-              {joining ? '...' : '加入行程'}
+        ) : (
+          <div style={styles.headerTop}>
+            <div style={styles.headerTitleBox}>
+              <h1 style={styles.title}>{detail.trip.title}</h1>
+              <div style={styles.dateRange}>{detail.trip.startDate} ~ {detail.trip.endDate}</div>
+            </div>
+            {isOpen && isCreator && (
+              <button onClick={startEditing} style={styles.editBtn}>編輯</button>
+            )}
+            {showJoinButton && (
+              <button onClick={handleJoin} disabled={joining} style={styles.joinBtn}>
+                {joining ? '...' : '加入行程'}
+              </button>
+            )}
+            <button onClick={handleShare} disabled={sharing} style={styles.shareBtn}>
+              {sharing ? '...' : '分享'}
             </button>
-          )}
-          <button onClick={handleShare} disabled={sharing} style={styles.shareBtn}>
-            {sharing ? '...' : '分享'}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -269,6 +331,11 @@ const styles: Record<string, React.CSSProperties> = {
   headerTitleBox: { flex: 1 },
   title: { fontSize: 22, margin: '8px 0 4px', fontWeight: 700 },
   dateRange: { fontSize: 13, color: '#888' },
+  editBtn: {
+    padding: '8px 16px', border: '1px solid #ddd', borderRadius: 8,
+    backgroundColor: '#fff', color: '#555', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0,
+  },
   joinBtn: {
     padding: '8px 16px', border: 'none', borderRadius: 8,
     backgroundColor: '#FF9800', color: '#fff', fontSize: 13, fontWeight: 600,

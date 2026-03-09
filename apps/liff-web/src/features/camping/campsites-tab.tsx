@@ -9,10 +9,12 @@ interface Props {
   isOpen: boolean;
   onAdd: (input: { name: string; cost: number; paidByParticipantId: string; memberParticipantIds: string[] }) => Promise<void>;
   onRemove: (campSiteId: string) => Promise<void>;
+  onUpdate?: (campSiteId: string, input: { name: string; cost: number; paidByParticipantId: string; memberParticipantIds: string[] }) => Promise<void>;
 }
 
-export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove }: Props) {
+export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove, onUpdate }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [cost, setCost] = useState('');
   const [paidBy, setPaidBy] = useState('');
@@ -31,7 +33,7 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove 
         paidByParticipantId: paidBy,
         memberParticipantIds: [...selectedMembers],
       });
-      setName(''); setCost(''); setPaidBy(''); setSelectedMembers(new Set()); setShowForm(false);
+      resetForm();
     } finally { setSubmitting(false); }
   };
 
@@ -43,6 +45,34 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove 
 
   const totalCost = campSites.reduce((sum, s) => sum + s.cost, 0);
 
+  const startEdit = (site: CampSite) => {
+    setEditingId(site.campSiteId);
+    setName(site.name);
+    setCost(String(site.cost));
+    setPaidBy(site.paidByParticipantId);
+    setSelectedMembers(new Set(site.memberParticipantIds));
+    setShowForm(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingId || !name.trim() || !cost || !paidBy || selectedMembers.size === 0) return;
+    setSubmitting(true);
+    try {
+      await onUpdate!(editingId, {
+        name: name.trim(),
+        cost: Number(cost),
+        paidByParticipantId: paidBy,
+        memberParticipantIds: [...selectedMembers],
+      });
+      resetForm();
+    } finally { setSubmitting(false); }
+  };
+
+  const resetForm = () => {
+    setName(''); setCost(''); setPaidBy(''); setSelectedMembers(new Set());
+    setShowForm(false); setEditingId(null);
+  };
+
   return (
     <div>
       <div style={cs.summary}>
@@ -51,21 +81,49 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove 
 
       {campSites.map(site => (
         <div key={site.campSiteId} style={cs.card}>
-          <div style={cs.cardHeader}>
-            <span style={styles.cardTitle}>{site.name}</span>
-            <span style={styles.cardCost}>${site.cost.toLocaleString()}</span>
-          </div>
-          <div style={styles.cardDetail}>
-            代墊: {nameOf.get(site.paidByParticipantId) ?? '?'}
-          </div>
-          <div style={styles.cardDetail}>
-            成員: {site.memberParticipantIds.map(id => nameOf.get(id) ?? '?').join('、')}
-          </div>
-          <div style={styles.cardDetail}>
-            每人: ${Math.round(site.cost / site.memberParticipantIds.length).toLocaleString()}
-          </div>
-          {isOpen && (
-            <button onClick={() => onRemove(site.campSiteId)} style={cs.removeBtn}>刪除</button>
+          {editingId === site.campSiteId ? (
+            <div style={cs.formCard}>
+              <div style={cs.formTitle}>編輯營位</div>
+              <input style={cs.input} placeholder="營位名稱" value={name} onChange={e => setName(e.target.value)} />
+              <input style={cs.input} placeholder="費用" type="number" value={cost} onChange={e => setCost(e.target.value)} />
+              <div style={cs.fieldLabel}>代墊人</div>
+              <select style={cs.select} value={paidBy} onChange={e => setPaidBy(e.target.value)}>
+                <option value="">選擇代墊人</option>
+                {participants.map(p => (
+                  <option key={p.participantId} value={p.participantId}>{p.name}</option>
+                ))}
+              </select>
+              <div style={cs.fieldLabel}>入住成員</div>
+              <ParticipantCheckboxes participants={participants} selected={selectedMembers} onToggle={toggleMember} />
+              <div style={cs.formActions}>
+                <button onClick={resetForm} style={cs.cancelBtn}>取消</button>
+                <button onClick={handleUpdate} disabled={submitting} style={cs.confirmBtn}>
+                  {submitting ? '儲存中...' : '儲存'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={cs.cardHeader}>
+                <span style={styles.cardTitle}>{site.name}</span>
+                <span style={styles.cardCost}>${site.cost.toLocaleString()}</span>
+              </div>
+              <div style={styles.cardDetail}>
+                代墊: {nameOf.get(site.paidByParticipantId) ?? '?'}
+              </div>
+              <div style={styles.cardDetail}>
+                成員: {site.memberParticipantIds.map(id => nameOf.get(id) ?? '?').join('、')}
+              </div>
+              <div style={styles.cardDetail}>
+                每人: ${Math.round(site.cost / site.memberParticipantIds.length).toLocaleString()}
+              </div>
+              {isOpen && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  {onUpdate && <button onClick={() => startEdit(site)} style={styles.editBtn}>編輯</button>}
+                  <button onClick={() => onRemove(site.campSiteId)} style={cs.removeBtn}>刪除</button>
+                </div>
+              )}
+            </>
           )}
         </div>
       ))}
@@ -74,7 +132,7 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove 
         <button onClick={() => setShowForm(true)} style={cs.addBtn}>+ 新增營位</button>
       )}
 
-      {showForm && (
+      {showForm && !editingId && (
         <div style={cs.formCard}>
           <div style={cs.formTitle}>新增營位</div>
           <input style={cs.input} placeholder="營位名稱" value={name} onChange={e => setName(e.target.value)} />
@@ -96,7 +154,7 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove 
           />
 
           <div style={cs.formActions}>
-            <button onClick={() => setShowForm(false)} style={cs.cancelBtn}>取消</button>
+            <button onClick={resetForm} style={cs.cancelBtn}>取消</button>
             <button onClick={handleSubmit} disabled={submitting} style={cs.confirmBtn}>
               {submitting ? '新增中...' : '確認'}
             </button>
@@ -168,4 +226,8 @@ const styles: Record<string, React.CSSProperties> = {
   cardCost: { fontSize: 15, fontWeight: 700, color: '#1DB446' },
   cardDetail: { fontSize: 13, color: '#666', marginTop: 4 },
   householdGroup: { paddingLeft: 0, marginTop: 4 },
+  editBtn: {
+    padding: '4px 12px', border: '1px solid #ddd', borderRadius: 6,
+    backgroundColor: '#fff', color: '#555', fontSize: 12, cursor: 'pointer',
+  },
 };

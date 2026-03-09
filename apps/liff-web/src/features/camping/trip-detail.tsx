@@ -293,6 +293,9 @@ export function TripDetail() {
             onRemove={withRefresh(async (campSiteId) => {
               await mutations.del(`/campsites/${campSiteId}`);
             })}
+            onUpdate={withRefresh(async (campSiteId, input) => {
+              await mutations.put(`/campsites/${campSiteId}`, input);
+            })}
           />
         )}
 

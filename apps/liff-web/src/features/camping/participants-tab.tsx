@@ -15,6 +15,7 @@ interface Props {
     };
   }) => Promise<void>;
   onRemove: (participantId: string) => Promise<void>;
+  onUpdate?: (participantId: string, updates: { name?: string; splitWeight?: 1 | 0.5 | 0 }) => Promise<void>;
 }
 
 const WEIGHT_CONFIG: Record<string, { label: string; badge: string; bg: string; color: string }> = {
@@ -23,7 +24,7 @@ const WEIGHT_CONFIG: Record<string, { label: string; badge: string; bg: string; 
   '0':   { label: '不列入分攤', badge: '不列入', bg: '#f3e5f5', color: '#7b1fa2' },
 };
 
-export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, onRemove }: Props) {
+export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, onRemove, onUpdate }: Props) {
   const [showAddForm, setShowAddForm] = useState<'none' | 'individual' | 'household'>('none');
   const [name, setName] = useState('');
   const [weight, setWeight] = useState<1 | 0.5 | 0>(1);
@@ -31,6 +32,9 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
   const [householdHeadWeight, setHouseholdHeadWeight] = useState<1 | 0.5 | 0>(1);
   const [members, setMembers] = useState<Array<{ name: string; weight: 1 | 0.5 | 0 }>>([{ name: '', weight: 1 }]);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editWeight, setEditWeight] = useState<1 | 0.5 | 0>(1);
 
   const { households, individuals } = groupByHousehold(participants);
 
@@ -68,30 +72,72 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
       {/* Individuals */}
       {individuals.map(p => (
         <div key={p.participantId} style={styles.participantCard}>
-          <div style={styles.participantRow}>
-            <span style={styles.participantName}>{p.name}</span>
-            <WeightBadge weight={p.splitWeight} />
-            {isOpen && (
-              <button onClick={() => onRemove(p.participantId)} style={cs.removeBtn}>移除</button>
-            )}
-          </div>
+          {editingId === p.participantId ? (
+            <ParticipantEditRow
+              editName={editName} setEditName={setEditName}
+              editWeight={editWeight} setEditWeight={setEditWeight}
+              onSave={async () => {
+                if (!onUpdate) return;
+                setSubmitting(true);
+                try {
+                  await onUpdate(p.participantId, { name: editName, splitWeight: editWeight });
+                  setEditingId(null);
+                } finally { setSubmitting(false); }
+              }}
+              onCancel={() => setEditingId(null)}
+              submitting={submitting}
+            />
+          ) : (
+            <div style={styles.participantRow}>
+              <span style={styles.participantName}>{p.name}</span>
+              <WeightBadge weight={p.splitWeight} />
+              {isOpen && onUpdate && (
+                <button onClick={() => { setEditingId(p.participantId); setEditName(p.name); setEditWeight(p.splitWeight); }} style={styles.editBtn}>編輯</button>
+              )}
+              {isOpen && (
+                <button onClick={() => onRemove(p.participantId)} style={cs.removeBtn}>移除</button>
+              )}
+            </div>
+          )}
         </div>
       ))}
 
       {/* Households */}
-      {[...households.entries()].map(([hid, members]) => {
-        const head = members.find(m => m.isHouseholdHead);
+      {[...households.entries()].map(([hid, hMembers]) => {
+        const head = hMembers.find(m => m.isHouseholdHead);
         return (
           <div key={hid} style={styles.householdCard}>
             <div style={styles.householdTitle}>{head?.name ?? '?'} 一家</div>
-            {members.map(m => (
-              <div key={m.participantId} style={styles.participantRow}>
-                <span style={styles.participantName}>
-                  {m.isHouseholdHead ? '👤 ' : '  '}{m.name}
-                </span>
-                <WeightBadge weight={m.splitWeight} />
-                {isOpen && (
-                  <button onClick={() => onRemove(m.participantId)} style={cs.removeBtn}>移除</button>
+            {hMembers.map(m => (
+              <div key={m.participantId}>
+                {editingId === m.participantId ? (
+                  <ParticipantEditRow
+                    editName={editName} setEditName={setEditName}
+                    editWeight={editWeight} setEditWeight={setEditWeight}
+                    onSave={async () => {
+                      if (!onUpdate) return;
+                      setSubmitting(true);
+                      try {
+                        await onUpdate(m.participantId, { name: editName, splitWeight: editWeight });
+                        setEditingId(null);
+                      } finally { setSubmitting(false); }
+                    }}
+                    onCancel={() => setEditingId(null)}
+                    submitting={submitting}
+                  />
+                ) : (
+                  <div style={styles.participantRow}>
+                    <span style={styles.participantName}>
+                      {m.isHouseholdHead ? '👤 ' : '  '}{m.name}
+                    </span>
+                    <WeightBadge weight={m.splitWeight} />
+                    {isOpen && onUpdate && (
+                      <button onClick={() => { setEditingId(m.participantId); setEditName(m.name); setEditWeight(m.splitWeight); }} style={styles.editBtn}>編輯</button>
+                    )}
+                    {isOpen && (
+                      <button onClick={() => onRemove(m.participantId)} style={cs.removeBtn}>移除</button>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
@@ -175,6 +221,23 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
   );
 }
 
+function ParticipantEditRow({ editName, setEditName, editWeight, setEditWeight, onSave, onCancel, submitting }: {
+  editName: string; setEditName: (v: string) => void;
+  editWeight: 1 | 0.5 | 0; setEditWeight: (v: 1 | 0.5 | 0) => void;
+  onSave: () => void; onCancel: () => void; submitting: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input style={cs.input} value={editName} onChange={e => setEditName(e.target.value)} placeholder="名字" />
+      <WeightSelect value={editWeight} onChange={setEditWeight} />
+      <div style={cs.formActions}>
+        <button onClick={onCancel} style={cs.cancelBtn}>取消</button>
+        <button onClick={onSave} disabled={submitting} style={cs.confirmBtn}>{submitting ? '...' : '儲存'}</button>
+      </div>
+    </div>
+  );
+}
+
 function WeightBadge({ weight }: { weight: number }) {
   const info = WEIGHT_CONFIG[String(weight)] ?? WEIGHT_CONFIG['1'];
   return <span style={{ ...styles.badge, backgroundColor: info.bg, color: info.color }}>{info.badge}</span>;
@@ -199,6 +262,10 @@ const styles: Record<string, React.CSSProperties> = {
   participantRow: { display: 'flex', alignItems: 'center', gap: 8 },
   participantName: { flex: 1, fontSize: 15 },
   badge: { padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 'bold' },
+  editBtn: {
+    padding: '2px 8px', border: '1px solid #ddd', borderRadius: 6,
+    backgroundColor: '#fff', color: '#555', fontSize: 11, cursor: 'pointer',
+  },
   householdCard: {
     padding: 12, border: '1px solid #e0e0e0', borderRadius: 10,
     marginBottom: 10, backgroundColor: '#fafafa',

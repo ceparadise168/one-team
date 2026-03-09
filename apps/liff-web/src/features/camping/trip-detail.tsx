@@ -276,6 +276,9 @@ export function TripDetail() {
             onRemove={withRefresh(async (participantId) => {
               await mutations.del(`/participants/${participantId}`);
             })}
+            onUpdate={withRefresh(async (participantId, updates) => {
+              await mutations.put(`/participants/${participantId}`, updates);
+            })}
           />
         )}
 

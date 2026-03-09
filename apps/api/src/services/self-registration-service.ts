@@ -14,12 +14,14 @@ export interface SelfRegisterInput {
   tenantId: string;
   lineIdToken: string;
   employeeId: string;
+  nickname?: string;
 }
 
 export interface SelfRegisterByLineUserInput {
   tenantId: string;
   lineUserId: string;
   employeeId: string;
+  nickname?: string;
 }
 
 export interface SelfRegisterResult {
@@ -48,17 +50,18 @@ export class SelfRegistrationService {
       idToken: input.lineIdToken
     });
 
-    return this.processRegistration(input.tenantId, lineUserId, input.employeeId);
+    return this.processRegistration(input.tenantId, lineUserId, input.employeeId, input.nickname);
   }
 
   async registerByLineUser(input: SelfRegisterByLineUserInput): Promise<SelfRegisterResult> {
-    return this.processRegistration(input.tenantId, input.lineUserId, input.employeeId);
+    return this.processRegistration(input.tenantId, input.lineUserId, input.employeeId, input.nickname);
   }
 
   private async processRegistration(
     tenantId: string,
     lineUserId: string,
-    employeeId: string
+    employeeId: string,
+    nickname?: string
   ): Promise<SelfRegisterResult> {
     // Check for duplicate employeeId
     const existingByEmployee = await this.employeeBindingRepository.findByEmployeeId(
@@ -68,7 +71,7 @@ export class SelfRegistrationService {
     if (existingByEmployee && existingByEmployee.employmentStatus === 'ACTIVE') {
       if (existingByEmployee.accessStatus === 'REJECTED') {
         // Allow re-registration for rejected employees
-        return this.reRegister(existingByEmployee, tenantId, lineUserId, employeeId);
+        return this.reRegister(existingByEmployee, tenantId, lineUserId, employeeId, nickname);
       }
       throw new ConflictError(`Employee ID ${employeeId} is already registered`);
     }
@@ -92,6 +95,7 @@ export class SelfRegistrationService {
       employmentStatus: 'ACTIVE',
       accessStatus: 'PENDING',
       accessRequestedAt: nowIso,
+      nickname,
     });
 
     await this.linkPendingRichMenu(tenantId, lineUserId);
@@ -109,7 +113,8 @@ export class SelfRegistrationService {
     existing: { tenantId: string; employeeId: string; lineUserId: string },
     tenantId: string,
     lineUserId: string,
-    employeeId: string
+    employeeId: string,
+    nickname?: string
   ): Promise<SelfRegisterResult> {
     const nowIso = this.options.now().toISOString();
 
@@ -122,7 +127,8 @@ export class SelfRegistrationService {
       accessStatus: 'PENDING',
       accessRequestedAt: nowIso,
       accessReviewedAt: undefined,
-      accessReviewedBy: undefined
+      accessReviewedBy: undefined,
+      nickname,
     });
 
     await this.linkPendingRichMenu(tenantId, lineUserId);

@@ -170,7 +170,8 @@ const retryOffboardingJobSchema = z.object({
 const selfRegisterSchema = z.object({
   tenantId: z.string().min(1),
   lineIdToken: z.string().min(1),
-  employeeId: z.string().min(1).max(50)
+  employeeId: z.string().min(1).max(50),
+  nickname: z.string().max(50).optional()
 });
 
 const adminLoginSchema = z.object({

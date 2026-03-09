@@ -262,4 +262,33 @@ describe('SelfRegistrationService', () => {
 
     assert.equal(result.accessStatus, 'PENDING');
   });
+
+  it('stores nickname when provided during registration', async () => {
+    const { service, employeeBindingRepo } = await createContext();
+
+    await service.register({
+      tenantId: 'tenant-1',
+      lineIdToken: 'line-id:U-nick-user',
+      employeeId: 'E-nick',
+      nickname: '小花'
+    });
+
+    const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E-nick');
+    assert.ok(binding);
+    assert.equal(binding.nickname, '小花');
+  });
+
+  it('registers successfully without nickname', async () => {
+    const { service, employeeBindingRepo } = await createContext();
+
+    await service.register({
+      tenantId: 'tenant-1',
+      lineIdToken: 'line-id:U-no-nick',
+      employeeId: 'E-no-nick'
+    });
+
+    const binding = await employeeBindingRepo.findByEmployeeId('tenant-1', 'E-no-nick');
+    assert.ok(binding);
+    assert.equal(binding.nickname, undefined);
+  });
 });

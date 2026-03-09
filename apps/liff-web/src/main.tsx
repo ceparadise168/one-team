@@ -15,6 +15,7 @@ import { AdminSessions } from './features/massage/admin-sessions';
 import { CreateSession } from './features/massage/create-session';
 import { SessionBookings } from './features/massage/session-bookings';
 import { ScheduleManagement } from './features/massage/schedule-management';
+import { ProfilePage } from './features/profile/profile-page';
 import { AuthGuard } from './auth-guard';
 import { TripList } from './features/camping/trip-list';
 import { CreateTrip } from './features/camping/create-trip';
@@ -53,6 +54,7 @@ function App() {
               <RegistrationForm apiBaseUrl={apiBaseUrl} liffId={liffId} tenantId={tenantId} />
             }
           />
+          <Route path="/profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
           <Route path="/digital-id" element={<AuthGuard><DigitalIdCard /></AuthGuard>} />
           <Route path="/volunteer" element={<AuthGuard><ActivityList /></AuthGuard>} />
           <Route path="/volunteer/create" element={<AuthGuard><CreateActivity /></AuthGuard>} />

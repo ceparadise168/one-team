@@ -188,7 +188,10 @@ function buildApprovedMenu() {
       },
       {
         bounds: { x: 833, y: 0, width: 834, height: 843 },
-        action: { type: 'postback', data: 'action=profile', displayText: '我的資料' }
+        action: {
+          type: 'uri',
+          uri: `${liffBase}/profile?tenantId=${DEFAULT_TENANT_ID}`
+        }
       },
       {
         bounds: { x: 1667, y: 0, width: 833, height: 843 },

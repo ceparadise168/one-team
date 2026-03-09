@@ -589,20 +589,52 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     const meMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/profile$/);
-    if (method === 'GET' && meMatch) {
+    if (meMatch) {
       const principal = await requireEmployeePrincipal({
         event,
         authSessionService,
         requiredTenantId: meMatch[1]
       });
 
-      return jsonResponse(200, {
-        tenantId: principal.tenantId,
-        employeeId: principal.employeeId,
-        lineUserId: principal.lineUserId,
-        sessionId: principal.sessionId,
-        tokenExpiresAtEpochSeconds: principal.exp
-      }, responseOptions);
+      if (method === 'GET') {
+        const binding = await employeeBindingRepository.findByEmployeeId(
+          principal.tenantId,
+          principal.employeeId
+        );
+
+        return jsonResponse(200, {
+          tenantId: principal.tenantId,
+          employeeId: principal.employeeId,
+          lineUserId: principal.lineUserId,
+          nickname: binding?.nickname ?? null,
+        }, responseOptions);
+      }
+
+      if (method === 'PATCH') {
+        const body = z.object({
+          nickname: z.string().max(50).optional(),
+        }).parse(parseBody(event));
+
+        const binding = await employeeBindingRepository.findByEmployeeId(
+          principal.tenantId,
+          principal.employeeId
+        );
+
+        if (!binding) {
+          return jsonResponse(404, { error: 'Binding not found' }, responseOptions);
+        }
+
+        await employeeBindingRepository.upsert({
+          ...binding,
+          nickname: body.nickname ?? undefined,
+        });
+
+        return jsonResponse(200, {
+          tenantId: principal.tenantId,
+          employeeId: principal.employeeId,
+          nickname: body.nickname ?? null,
+        }, responseOptions);
+      }
     }
 
     const accessRequestMatch = path.match(/^\/v1\/liff\/tenants\/([^/]+)\/me\/access-request$/);

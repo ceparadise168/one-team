@@ -27,6 +27,7 @@ export function useEmployees(
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     const params = new URLSearchParams();
     if (status) params.set('status', status);

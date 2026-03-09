@@ -46,6 +46,7 @@ export function useMassageSessions(apiBaseUrl: string, accessToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
     fetch(`${apiBaseUrl}/v1/massage/sessions?fromDate=${today}`, {
@@ -76,6 +77,7 @@ export function useMyMassageBookings(apiBaseUrl: string, accessToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/massage/my-bookings`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -105,6 +107,7 @@ export function useSessionSlots(apiBaseUrl: string, accessToken: string, session
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/slots`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -251,6 +254,7 @@ export function useSessionBookings(
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/bookings`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -366,6 +370,7 @@ export function useMassageSchedules(apiBaseUrl: string, accessToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/massage/schedules`, {
       headers: { Authorization: `Bearer ${accessToken}` },

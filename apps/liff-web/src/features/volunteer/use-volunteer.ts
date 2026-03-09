@@ -44,6 +44,7 @@ export function useActivities(apiBaseUrl: string, accessToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!accessToken) return;
     fetch(`${apiBaseUrl}/v1/volunteer/activities?status=OPEN`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
@@ -62,6 +63,7 @@ export function useActivityDetail(apiBaseUrl: string, accessToken: string, activ
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },

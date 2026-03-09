@@ -88,6 +88,7 @@ export function useCampingTrips(apiBaseUrl: string, accessToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/liff/camping/trips`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -108,6 +109,7 @@ export function useTripDetail(apiBaseUrl: string, accessToken: string, tripId: s
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (!accessToken) return;
     setLoading(true);
     fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -181,6 +183,7 @@ export function useAuditLogs(apiBaseUrl: string, accessToken: string, tripId: st
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!accessToken) return;
     setLoading(true);
     try {
       const res = await fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}/audit-logs`, {

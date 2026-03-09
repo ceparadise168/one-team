@@ -48,7 +48,7 @@ const LIFF_ID = process.env.LIFF_ID;
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const TABLE_NAME = process.env.TABLE_NAME ?? 'one-team-dev-tenants';
 const AWS_REGION = process.env.AWS_REGION ?? 'ap-northeast-1';
-const DEFAULT_TENANT_ID = 'tenant_bcf4cb8eb630';
+const DEFAULT_TENANT_ID = 'tenant_bfbda3faceb6';
 
 // Derive employees table from tenants table (one-team-dev-tenants → one-team-dev-employees)
 const EMPLOYEES_TABLE_NAME = TABLE_NAME.replace(/-tenants$/, '-employees');
@@ -363,7 +363,6 @@ async function main() {
         console.log(`   ⚠ ${lineUserId} (${employeeId}) — ${err.message}`);
         skipped++;
       }
-    }
   }
   console.log(`   Assigned: ${assigned}, Skipped: ${skipped}`);
 

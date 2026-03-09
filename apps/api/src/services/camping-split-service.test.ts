@@ -4,7 +4,7 @@ import { CampingSplitService } from './camping-split-service.js';
 import { InMemoryCampingRepository } from '../repositories/camping-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
-import { ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
+import { ForbiddenError, ValidationError } from '../errors.js';
 
 const TENANT = 'test-tenant';
 
@@ -276,7 +276,7 @@ describe('CampingSplitService — Audit Logs', () => {
     }, actor);
 
     const participants = await repo.listParticipants(tripId);
-    const { campSiteId } = await service.addCampSite(tripId, {
+    await service.addCampSite(tripId, {
       name: 'A區', cost: 3000, paidByParticipantId: participants[0].participantId,
       memberParticipantIds: [participants[0].participantId],
     }, actor);

@@ -60,7 +60,7 @@ export function useMassageSessions(apiBaseUrl: string, accessToken: string) {
         setSessions(data.sessions ?? []);
         setError(null);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken]);
 
@@ -90,7 +90,7 @@ export function useMyMassageBookings(apiBaseUrl: string, accessToken: string) {
         setBookings(data.bookings ?? []);
         setError(null);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken]);
 
@@ -120,7 +120,7 @@ export function useSessionSlots(apiBaseUrl: string, accessToken: string, session
         setSlots(data.slots ?? []);
         setError(null);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, sessionId]);
 
@@ -268,7 +268,7 @@ export function useSessionBookings(
         setBookings(data.bookings ?? []);
         setError(null);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, sessionId]);
 

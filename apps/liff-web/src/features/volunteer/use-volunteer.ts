@@ -50,7 +50,7 @@ export function useActivities(apiBaseUrl: string, accessToken: string) {
     })
       .then((r) => r.json())
       .then((data) => setActivities(data.activities))
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken]);
 
@@ -73,7 +73,7 @@ export function useActivityDetail(apiBaseUrl: string, accessToken: string, activ
         return r.json();
       })
       .then((data) => setDetail(data))
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, activityId]);
 
@@ -134,7 +134,7 @@ export function useReport(apiBaseUrl: string, accessToken: string, activityId: s
         return r.json();
       })
       .then((data) => setReport(data))
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, activityId]);
 

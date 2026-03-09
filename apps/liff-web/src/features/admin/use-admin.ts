@@ -45,7 +45,7 @@ export function useEmployees(
         setTotal(data.total ?? data.employees.length);
         setError(null);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, tenantId, status, search]);
 

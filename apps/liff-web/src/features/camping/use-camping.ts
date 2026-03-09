@@ -95,7 +95,7 @@ export function useCampingTrips(apiBaseUrl: string, accessToken: string) {
     })
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
       .then(data => { setTrips(data.trips ?? []); setError(null); })
-      .catch(e => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken]);
 
@@ -116,7 +116,7 @@ export function useTripDetail(apiBaseUrl: string, accessToken: string, tripId: s
     })
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
       .then(data => { setDetail(data); setError(null); })
-      .catch(e => setError(e.message))
+      .catch(() => setError('載入失敗，請稍後再試'))
       .finally(() => setLoading(false));
   }, [apiBaseUrl, accessToken, tripId]);
 

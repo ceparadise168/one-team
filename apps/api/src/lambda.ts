@@ -1158,7 +1158,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
           creatorEmployeeId: principal.employeeId,
           creatorName: body.creatorName as string,
           creatorLineUserId: principal.lineUserId ?? null,
-        });
+        }, { employeeId: principal.employeeId, name: body.creatorName as string });
         return jsonResponse(201, result, responseOptions);
       }
       if (method === 'GET') {
@@ -1177,6 +1177,20 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         const detail = await campingSplitService.getTripDetail(tripId, principal.tenantId);
         return jsonResponse(200, detail, responseOptions);
       }
+      if (method === 'PUT') {
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = parseBody(event) as Record<string, unknown>;
+        await campingSplitService.updateTrip(tripId, principal.tenantId, {
+          title: body.title as string | undefined,
+          startDate: body.startDate as string | undefined,
+          endDate: body.endDate as string | undefined,
+          creatorEmployeeId: body.creatorEmployeeId as string | undefined,
+        }, {
+          employeeId: principal.employeeId,
+          name: (body.actorName as string) ?? principal.employeeId,
+        });
+        return jsonResponse(200, { ok: true }, responseOptions);
+      }
     }
 
     // --- Camping: Participants ---
@@ -1184,18 +1198,19 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingParticipantsMatch) {
       const tripId = campingParticipantsMatch[1];
       if (method === 'POST') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
         if (body.household) {
           const hh = body.household as Record<string, unknown>;
           const result = await campingSplitService.addHousehold(tripId, {
             head: hh.head as any,
             members: hh.members as any[],
             settleAsHousehold: hh.settleAsHousehold as boolean,
-          });
+          }, actor);
           return jsonResponse(201, result, responseOptions);
         }
-        const result = await campingSplitService.addParticipant(tripId, body as any);
+        const result = await campingSplitService.addParticipant(tripId, body as any, actor);
         return jsonResponse(201, result, responseOptions);
       }
     }
@@ -1204,14 +1219,17 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingParticipantMatch) {
       const [, tripId, participantId] = campingParticipantMatch;
       if (method === 'PUT') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        await campingSplitService.updateParticipant(tripId, participantId, body as any);
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.updateParticipant(tripId, participantId, body as any, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
-        await requireEmployeePrincipal({ event, authSessionService });
-        await campingSplitService.removeParticipant(tripId, participantId);
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = JSON.parse(event.body || '{}');
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.removeParticipant(tripId, participantId, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
     }
@@ -1221,9 +1239,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingCampSitesMatch) {
       const tripId = campingCampSitesMatch[1];
       if (method === 'POST') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const result = await campingSplitService.addCampSite(tripId, body as any);
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const result = await campingSplitService.addCampSite(tripId, body as any, actor);
         return jsonResponse(201, result, responseOptions);
       }
     }
@@ -1232,14 +1251,17 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingCampSiteMatch) {
       const [, tripId, campSiteId] = campingCampSiteMatch;
       if (method === 'PUT') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        await campingSplitService.updateCampSite(tripId, campSiteId, body as any);
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.updateCampSite(tripId, campSiteId, body as any, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
-        await requireEmployeePrincipal({ event, authSessionService });
-        await campingSplitService.removeCampSite(tripId, campSiteId);
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = JSON.parse(event.body || '{}');
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.removeCampSite(tripId, campSiteId, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
     }
@@ -1249,9 +1271,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingExpensesMatch) {
       const tripId = campingExpensesMatch[1];
       if (method === 'POST') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const result = await campingSplitService.addExpense(tripId, body as any);
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const result = await campingSplitService.addExpense(tripId, body as any, actor);
         return jsonResponse(201, result, responseOptions);
       }
     }
@@ -1260,14 +1283,17 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingExpenseMatch) {
       const [, tripId, expenseId] = campingExpenseMatch;
       if (method === 'PUT') {
-        await requireEmployeePrincipal({ event, authSessionService });
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        await campingSplitService.updateExpense(tripId, expenseId, body as any);
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.updateExpense(tripId, expenseId, body as any, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
-        await requireEmployeePrincipal({ event, authSessionService });
-        await campingSplitService.removeExpense(tripId, expenseId);
+        const principal = await requireEmployeePrincipal({ event, authSessionService });
+        const body = JSON.parse(event.body || '{}');
+        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        await campingSplitService.removeExpense(tripId, expenseId, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
     }
@@ -1292,7 +1318,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingSettleMatch && method === 'POST') {
       const tripId = campingSettleMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const settlement = await campingSplitService.settle(tripId, principal.employeeId, principal.tenantId);
+      const body = JSON.parse(event.body || '{}');
+      const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+      const settlement = await campingSplitService.settle(tripId, principal.employeeId, principal.tenantId, actor);
       return jsonResponse(200, settlement, responseOptions);
     }
 
@@ -1311,6 +1339,28 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       const principal = await requireEmployeePrincipal({ event, authSessionService });
       const preview = await campingSplitService.previewSettlement(tripId, principal.tenantId);
       return jsonResponse(200, preview, responseOptions);
+    }
+
+    // --- Camping: Unsettle ---
+    const campingUnsettleMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/unsettle$/);
+    if (campingUnsettleMatch && method === 'POST') {
+      const tripId = campingUnsettleMatch[1];
+      const principal = await requireEmployeePrincipal({ event, authSessionService });
+      const body = JSON.parse(event.body || '{}');
+      await campingSplitService.unsettleTrip(tripId, principal.tenantId, {
+        employeeId: principal.employeeId,
+        name: (body.actorName as string) ?? principal.employeeId,
+      });
+      return jsonResponse(200, { ok: true }, responseOptions);
+    }
+
+    // --- Camping: Audit logs ---
+    const campingAuditLogsMatch = path.match(/^\/v1\/liff\/camping\/trips\/([^/]+)\/audit-logs$/);
+    if (campingAuditLogsMatch && method === 'GET') {
+      const tripId = campingAuditLogsMatch[1];
+      await requireEmployeePrincipal({ event, authSessionService });
+      const logs = await campingSplitService.listAuditLogs(tripId);
+      return jsonResponse(200, { logs }, responseOptions);
     }
 
     // --- Camping: Public summary (no auth) ---

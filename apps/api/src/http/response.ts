@@ -42,7 +42,7 @@ export function preflightResponse(origin: string, corsConfig: CorsConfig): APIGa
   Object.assign(headers, corsHeaders);
 
   if (corsHeaders['access-control-allow-origin']) {
-    headers['access-control-allow-methods'] = 'GET,POST,PUT,DELETE,OPTIONS';
+    headers['access-control-allow-methods'] = 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
     headers['access-control-allow-headers'] = 'content-type,authorization,x-scanner-api-key';
     headers['access-control-max-age'] = '86400';
   }

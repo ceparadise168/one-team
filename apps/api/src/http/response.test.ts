@@ -74,7 +74,7 @@ describe('preflightResponse', () => {
     assert.equal(result.statusCode, 204);
     assert.equal(result.body, '');
     assert.equal(result.headers!['access-control-allow-origin'], 'https://app.example.com');
-    assert.equal(result.headers!['access-control-allow-methods'], 'GET,POST,PUT,DELETE,OPTIONS');
+    assert.equal(result.headers!['access-control-allow-methods'], 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     assert.equal(result.headers!['access-control-allow-headers'], 'content-type,authorization,x-scanner-api-key');
     assert.equal(result.headers!['access-control-max-age'], '86400');
     assert.equal(result.headers!['x-content-type-options'], 'nosniff');

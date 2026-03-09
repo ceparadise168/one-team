@@ -50,7 +50,8 @@ export function useRegistration({
           body: JSON.stringify({
             tenantId,
             employeeId: data.employeeId,
-            lineIdToken
+            lineIdToken,
+            ...(data.nickname ? { nickname: data.nickname } : {})
           })
         });
         if (!response.ok) {

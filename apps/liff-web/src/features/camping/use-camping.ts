@@ -73,6 +73,15 @@ export interface TripDetail {
   settlement: Settlement | null;
 }
 
+export interface AuditLog {
+  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  entityType: 'TRIP' | 'PARTICIPANT' | 'CAMPSITE' | 'EXPENSE' | 'SETTLEMENT';
+  entityName: string;
+  actorName: string;
+  changes: Record<string, { from: unknown; to: unknown }> | null;
+  createdAt: string;
+}
+
 export function useCampingTrips(apiBaseUrl: string, accessToken: string) {
   const [trips, setTrips] = useState<CampingTrip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,4 +174,45 @@ export function useTripMutations(apiBaseUrl: string, accessToken: string, tripId
   }, [apiBaseUrl, accessToken, tripId]);
 
   return { post, put, del };
+}
+
+export function useAuditLogs(apiBaseUrl: string, accessToken: string, tripId: string) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}/audit-logs`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error('載入失敗');
+      const data = await res.json();
+      setLogs(data.logs ?? []);
+    } finally { setLoading(false); }
+  }, [apiBaseUrl, accessToken, tripId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { logs, loading, refresh };
+}
+
+export async function updateTripApi(apiBaseUrl: string, accessToken: string, tripId: string, input: {
+  title?: string; startDate?: string; endDate?: string;
+  creatorEmployeeId?: string; actorName?: string;
+}) {
+  const res = await fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error('更新失敗');
+}
+
+export async function unsettleTripApi(apiBaseUrl: string, accessToken: string, tripId: string, actorName?: string) {
+  const res = await fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}/unsettle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ actorName }),
+  });
+  if (!res.ok) throw new Error('取消結算失敗');
 }

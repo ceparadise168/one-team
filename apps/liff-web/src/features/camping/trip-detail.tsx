@@ -7,16 +7,18 @@ import { ParticipantsTab } from './participants-tab';
 import { CampSitesTab } from './campsites-tab';
 import { ExpensesTab } from './expenses-tab';
 import { SettlementTab } from './settlement-tab';
+import { HistoryTab } from './history-tab';
 import { campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
-type Tab = 'participants' | 'campsites' | 'expenses' | 'settlement';
+type Tab = 'participants' | 'campsites' | 'expenses' | 'settlement' | 'history';
 
 const TAB_LABELS: Record<Tab, string> = {
   participants: '參與者',
   campsites: '營位',
   expenses: '費用',
   settlement: '結算',
+  history: '歷史',
 };
 
 export function TripDetail() {
@@ -331,6 +333,10 @@ export function TripDetail() {
               await unsettleTripApi(apiBaseUrl, accessToken, tripId!, myName);
             })}
           />
+        )}
+
+        {activeTab === 'history' && (
+          <HistoryTab tripId={tripId!} apiBaseUrl={apiBaseUrl} accessToken={accessToken} />
         )}
       </div>
     </div>

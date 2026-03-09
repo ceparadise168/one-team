@@ -5,6 +5,7 @@ import type {
   CampSiteRecord,
   ExpenseRecord,
   SettlementRecord,
+  AuditLogRecord,
 } from '../domain/camping.js';
 import type { CampingRepository } from './camping-repository.js';
 
@@ -199,5 +200,41 @@ export class DynamoDbCampingRepository implements CampingRepository {
       Key: { pk: `CAMPING_TRIP#${tripId}`, sk: 'SETTLEMENT' },
     }));
     return stripMetadata<SettlementRecord>(result.Item as Record<string, unknown> | undefined);
+  }
+
+  // --- Audit Logs ---
+  async createAuditLog(log: AuditLogRecord): Promise<void> {
+    await this.client.send(new PutCommand({
+      TableName: this.tableName,
+      Item: {
+        pk: `CAMPING_TRIP#${log.tripId}`,
+        sk: `AUDIT_LOG#${log.createdAt}#${log.logId}`,
+        entityType: 'CAMPING_AUDIT_LOG',
+        ...log,
+      },
+    }));
+  }
+
+  async listAuditLogs(tripId: string): Promise<AuditLogRecord[]> {
+    const result = await this.client.send(new QueryCommand({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': `CAMPING_TRIP#${tripId}`,
+        ':prefix': 'AUDIT_LOG#',
+      },
+      ScanIndexForward: false,
+    }));
+    return (result.Items ?? []).map(item => stripMetadata<AuditLogRecord>(item as Record<string, unknown>)!);
+  }
+
+  async deleteSettlement(tripId: string): Promise<void> {
+    await this.client.send(new DeleteCommand({
+      TableName: this.tableName,
+      Key: {
+        pk: `CAMPING_TRIP#${tripId}`,
+        sk: 'SETTLEMENT',
+      },
+    }));
   }
 }

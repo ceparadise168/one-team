@@ -66,3 +66,19 @@ export interface SettlementRecord {
   participantSummaries: ParticipantSummary[];
   settledAt: string;
 }
+
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
+export type AuditEntityType = 'TRIP' | 'PARTICIPANT' | 'CAMPSITE' | 'EXPENSE' | 'SETTLEMENT';
+
+export interface AuditLogRecord {
+  tripId: string;
+  logId: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: string;
+  entityName: string;
+  actorEmployeeId: string;
+  actorName: string;
+  changes: Record<string, { from: unknown; to: unknown }> | null;
+  createdAt: string;
+}

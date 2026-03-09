@@ -7,6 +7,8 @@ import type {
   SettlementRecord,
   SplitWeight,
   ExpenseSplitType,
+  AuditAction,
+  AuditEntityType,
 } from '../domain/camping.js';
 import { calculateSettlement } from '../domain/camping-settlement.js';
 import type { CampingRepository } from '../repositories/camping-repository.js';
@@ -63,6 +65,11 @@ interface AddCampSiteInput {
   memberParticipantIds: string[];
 }
 
+export interface Actor {
+  employeeId: string;
+  name: string;
+}
+
 export class CampingSplitService {
   constructor(
     private readonly repo: CampingRepository,
@@ -71,7 +78,30 @@ export class CampingSplitService {
     private readonly employeeBindingRepo?: EmployeeBindingRepository,
   ) {}
 
-  async createTrip(input: CreateTripInput): Promise<{ tripId: string }> {
+  private async writeAuditLog(
+    tripId: string,
+    action: AuditAction,
+    entityType: AuditEntityType,
+    entityId: string,
+    entityName: string,
+    actor: Actor,
+    changes: Record<string, { from: unknown; to: unknown }> | null,
+  ): Promise<void> {
+    await this.repo.createAuditLog({
+      tripId,
+      logId: randomUUID().slice(0, 12),
+      action,
+      entityType,
+      entityId,
+      entityName,
+      actorEmployeeId: actor.employeeId,
+      actorName: actor.name,
+      changes,
+      createdAt: this.options.now().toISOString(),
+    });
+  }
+
+  async createTrip(input: CreateTripInput, actor?: Actor): Promise<{ tripId: string }> {
     const tripId = randomUUID().slice(0, 12);
     const trip: CampingTripRecord = {
       tenantId: input.tenantId,
@@ -97,6 +127,10 @@ export class CampingSplitService {
       settleAsHousehold: false,
     });
 
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'TRIP', tripId, input.title, actor, null);
+    }
+
     return { tripId };
   }
 
@@ -106,7 +140,7 @@ export class CampingSplitService {
     return trip;
   }
 
-  async addParticipant(tripId: string, input: AddParticipantInput): Promise<{ participantId: string }> {
+  async addParticipant(tripId: string, input: AddParticipantInput, actor?: Actor): Promise<{ participantId: string }> {
     await this.requireOpen(tripId);
     const participantId = randomUUID().slice(0, 12);
     await this.repo.createParticipant({
@@ -120,16 +154,20 @@ export class CampingSplitService {
       isHouseholdHead: false,
       settleAsHousehold: false,
     });
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'PARTICIPANT', participantId, input.name, actor, null);
+    }
     return { participantId };
   }
 
-  async addHousehold(tripId: string, input: AddHouseholdInput): Promise<{ householdId: string }> {
+  async addHousehold(tripId: string, input: AddHouseholdInput, actor?: Actor): Promise<{ householdId: string }> {
     await this.requireOpen(tripId);
     const householdId = randomUUID().slice(0, 12);
 
+    const headId = randomUUID().slice(0, 12);
     await this.repo.createParticipant({
       tripId,
-      participantId: randomUUID().slice(0, 12),
+      participantId: headId,
       name: input.head.name,
       employeeId: input.head.employeeId,
       lineUserId: input.head.lineUserId,
@@ -138,11 +176,15 @@ export class CampingSplitService {
       isHouseholdHead: true,
       settleAsHousehold: input.settleAsHousehold,
     });
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'PARTICIPANT', headId, input.head.name, actor, null);
+    }
 
     for (const member of input.members) {
+      const memberId = randomUUID().slice(0, 12);
       await this.repo.createParticipant({
         tripId,
-        participantId: randomUUID().slice(0, 12),
+        participantId: memberId,
         name: member.name,
         employeeId: member.employeeId,
         lineUserId: member.lineUserId,
@@ -151,25 +193,46 @@ export class CampingSplitService {
         isHouseholdHead: false,
         settleAsHousehold: input.settleAsHousehold,
       });
+      if (actor) {
+        await this.writeAuditLog(tripId, 'CREATE', 'PARTICIPANT', memberId, member.name, actor, null);
+      }
     }
 
     return { householdId };
   }
 
-  async updateParticipant(tripId: string, participantId: string, updates: Partial<Pick<TripParticipantRecord, 'name' | 'splitWeight' | 'settleAsHousehold'>>): Promise<void> {
+  async updateParticipant(tripId: string, participantId: string, updates: Partial<Pick<TripParticipantRecord, 'name' | 'splitWeight' | 'settleAsHousehold'>>, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
     const participants = await this.repo.listParticipants(tripId);
     const p = participants.find(pp => pp.participantId === participantId);
     if (!p) throw new NotFoundError('Participant not found');
+
+    if (actor) {
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      if (updates.name !== undefined && updates.name !== p.name) changes.name = { from: p.name, to: updates.name };
+      if (updates.splitWeight !== undefined && updates.splitWeight !== p.splitWeight) changes.splitWeight = { from: p.splitWeight, to: updates.splitWeight };
+      if (updates.settleAsHousehold !== undefined && updates.settleAsHousehold !== p.settleAsHousehold) changes.settleAsHousehold = { from: p.settleAsHousehold, to: updates.settleAsHousehold };
+      if (Object.keys(changes).length > 0) {
+        await this.writeAuditLog(tripId, 'UPDATE', 'PARTICIPANT', participantId, p.name, actor, changes);
+      }
+    }
+
     await this.repo.updateParticipant({ ...p, ...updates });
   }
 
-  async removeParticipant(tripId: string, participantId: string): Promise<void> {
+  async removeParticipant(tripId: string, participantId: string, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
+    if (actor) {
+      const participants = await this.repo.listParticipants(tripId);
+      const p = participants.find(pp => pp.participantId === participantId);
+      if (p) {
+        await this.writeAuditLog(tripId, 'DELETE', 'PARTICIPANT', participantId, p.name, actor, null);
+      }
+    }
     await this.repo.deleteParticipant(tripId, participantId);
   }
 
-  async addCampSite(tripId: string, input: AddCampSiteInput): Promise<{ campSiteId: string }> {
+  async addCampSite(tripId: string, input: AddCampSiteInput, actor?: Actor): Promise<{ campSiteId: string }> {
     await this.requireOpen(tripId);
     const campSiteId = randomUUID().slice(0, 12);
     await this.repo.createCampSite({
@@ -180,23 +243,44 @@ export class CampingSplitService {
       paidByParticipantId: input.paidByParticipantId,
       memberParticipantIds: input.memberParticipantIds,
     });
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'CAMPSITE', campSiteId, input.name, actor, null);
+    }
     return { campSiteId };
   }
 
-  async updateCampSite(tripId: string, campSiteId: string, updates: Partial<Pick<CampSiteRecord, 'name' | 'cost' | 'paidByParticipantId' | 'memberParticipantIds'>>): Promise<void> {
+  async updateCampSite(tripId: string, campSiteId: string, updates: Partial<Pick<CampSiteRecord, 'name' | 'cost' | 'paidByParticipantId' | 'memberParticipantIds'>>, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
     const sites = await this.repo.listCampSites(tripId);
     const site = sites.find(s => s.campSiteId === campSiteId);
     if (!site) throw new NotFoundError('CampSite not found');
+
+    if (actor) {
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      if (updates.name !== undefined && updates.name !== site.name) changes.name = { from: site.name, to: updates.name };
+      if (updates.cost !== undefined && updates.cost !== site.cost) changes.cost = { from: site.cost, to: updates.cost };
+      if (updates.paidByParticipantId !== undefined && updates.paidByParticipantId !== site.paidByParticipantId) changes.paidByParticipantId = { from: site.paidByParticipantId, to: updates.paidByParticipantId };
+      if (Object.keys(changes).length > 0) {
+        await this.writeAuditLog(tripId, 'UPDATE', 'CAMPSITE', campSiteId, site.name, actor, changes);
+      }
+    }
+
     await this.repo.updateCampSite({ ...site, ...updates });
   }
 
-  async removeCampSite(tripId: string, campSiteId: string): Promise<void> {
+  async removeCampSite(tripId: string, campSiteId: string, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
+    if (actor) {
+      const sites = await this.repo.listCampSites(tripId);
+      const site = sites.find(s => s.campSiteId === campSiteId);
+      if (site) {
+        await this.writeAuditLog(tripId, 'DELETE', 'CAMPSITE', campSiteId, site.name, actor, null);
+      }
+    }
     await this.repo.deleteCampSite(tripId, campSiteId);
   }
 
-  async addExpense(tripId: string, input: AddExpenseInput): Promise<{ expenseId: string }> {
+  async addExpense(tripId: string, input: AddExpenseInput, actor?: Actor): Promise<{ expenseId: string }> {
     await this.requireOpen(tripId);
     if (input.splitType === 'CUSTOM' && (!input.splitAmong || input.splitAmong.length === 0)) {
       throw new ValidationError('splitAmong is required for CUSTOM split type');
@@ -212,23 +296,45 @@ export class CampingSplitService {
       splitAmong: input.splitAmong,
       createdAt: this.options.now().toISOString(),
     });
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'EXPENSE', expenseId, input.description, actor, null);
+    }
     return { expenseId };
   }
 
-  async updateExpense(tripId: string, expenseId: string, updates: Partial<Pick<ExpenseRecord, 'description' | 'amount' | 'paidByParticipantId' | 'splitType' | 'splitAmong'>>): Promise<void> {
+  async updateExpense(tripId: string, expenseId: string, updates: Partial<Pick<ExpenseRecord, 'description' | 'amount' | 'paidByParticipantId' | 'splitType' | 'splitAmong'>>, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
     const expenses = await this.repo.listExpenses(tripId);
     const expense = expenses.find(e => e.expenseId === expenseId);
     if (!expense) throw new NotFoundError('Expense not found');
+
+    if (actor) {
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      if (updates.description !== undefined && updates.description !== expense.description) changes.description = { from: expense.description, to: updates.description };
+      if (updates.amount !== undefined && updates.amount !== expense.amount) changes.amount = { from: expense.amount, to: updates.amount };
+      if (updates.paidByParticipantId !== undefined && updates.paidByParticipantId !== expense.paidByParticipantId) changes.paidByParticipantId = { from: expense.paidByParticipantId, to: updates.paidByParticipantId };
+      if (updates.splitType !== undefined && updates.splitType !== expense.splitType) changes.splitType = { from: expense.splitType, to: updates.splitType };
+      if (Object.keys(changes).length > 0) {
+        await this.writeAuditLog(tripId, 'UPDATE', 'EXPENSE', expenseId, expense.description, actor, changes);
+      }
+    }
+
     await this.repo.updateExpense({ ...expense, ...updates });
   }
 
-  async removeExpense(tripId: string, expenseId: string): Promise<void> {
+  async removeExpense(tripId: string, expenseId: string, actor?: Actor): Promise<void> {
     await this.requireOpen(tripId);
+    if (actor) {
+      const expenses = await this.repo.listExpenses(tripId);
+      const expense = expenses.find(e => e.expenseId === expenseId);
+      if (expense) {
+        await this.writeAuditLog(tripId, 'DELETE', 'EXPENSE', expenseId, expense.description, actor, null);
+      }
+    }
     await this.repo.deleteExpense(tripId, expenseId);
   }
 
-  async settle(tripId: string, callerEmployeeId: string, callerTenantId?: string): Promise<SettlementRecord> {
+  async settle(tripId: string, callerEmployeeId: string, callerTenantId?: string, actor?: Actor): Promise<SettlementRecord> {
     const trip = await this.getTrip(tripId);
     if (callerTenantId && trip.tenantId !== callerTenantId) {
       throw new ForbiddenError('Cannot access trip from different tenant');
@@ -260,6 +366,10 @@ export class CampingSplitService {
     await this.repo.updateTrip(trip);
 
     await this.sendSettlementNotifications(trip, participants, settlement);
+
+    if (actor) {
+      await this.writeAuditLog(tripId, 'CREATE', 'SETTLEMENT', tripId, trip.title, actor, null);
+    }
 
     return settlement;
   }
@@ -338,6 +448,8 @@ export class CampingSplitService {
       isHouseholdHead: false,
       settleAsHousehold: false,
     });
+
+    await this.writeAuditLog(input.tripId, 'CREATE', 'PARTICIPANT', participantId, input.name, { employeeId: input.employeeId, name: input.name }, null);
 
     return { participantId };
   }

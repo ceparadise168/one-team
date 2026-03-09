@@ -4,6 +4,7 @@ import type {
   CampSiteRecord,
   ExpenseRecord,
   SettlementRecord,
+  AuditLogRecord,
 } from '../domain/camping.js';
 
 export interface CampingRepository {
@@ -30,6 +31,12 @@ export interface CampingRepository {
 
   saveSettlement(settlement: SettlementRecord): Promise<void>;
   findSettlement(tripId: string): Promise<SettlementRecord | null>;
+
+  // Audit logs
+  createAuditLog(log: AuditLogRecord): Promise<void>;
+  listAuditLogs(tripId: string): Promise<AuditLogRecord[]>;
+  // Settlement deletion (for unsettle)
+  deleteSettlement(tripId: string): Promise<void>;
 }
 
 export class InMemoryCampingRepository implements CampingRepository {
@@ -38,6 +45,7 @@ export class InMemoryCampingRepository implements CampingRepository {
   private campSites: CampSiteRecord[] = [];
   private expenses: ExpenseRecord[] = [];
   private settlements: SettlementRecord[] = [];
+  private auditLogs: AuditLogRecord[] = [];
 
   async createTrip(trip: CampingTripRecord): Promise<void> {
     this.trips.push({ ...trip });
@@ -126,5 +134,19 @@ export class InMemoryCampingRepository implements CampingRepository {
 
   async findSettlement(tripId: string): Promise<SettlementRecord | null> {
     return this.settlements.find(s => s.tripId === tripId) ?? null;
+  }
+
+  async createAuditLog(log: AuditLogRecord): Promise<void> {
+    this.auditLogs.push(log);
+  }
+
+  async listAuditLogs(tripId: string): Promise<AuditLogRecord[]> {
+    return this.auditLogs
+      .filter(l => l.tripId === tripId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteSettlement(tripId: string): Promise<void> {
+    this.settlements = this.settlements.filter(s => s.tripId !== tripId);
   }
 }

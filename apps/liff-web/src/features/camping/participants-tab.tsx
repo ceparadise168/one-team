@@ -17,10 +17,10 @@ interface Props {
   onRemove: (participantId: string) => Promise<void>;
 }
 
-const WEIGHT_LABELS: Record<string, { label: string; bg: string; color: string }> = {
-  '1': { label: '大人', bg: '#e3f2fd', color: '#1565c0' },
-  '0.5': { label: '小孩', bg: '#fff3e0', color: '#e65100' },
-  '0': { label: '幼兒', bg: '#f3e5f5', color: '#7b1fa2' },
+const WEIGHT_CONFIG: Record<string, { label: string; badge: string; bg: string; color: string }> = {
+  '1':   { label: '全額分攤', badge: '全額', bg: '#e3f2fd', color: '#1565c0' },
+  '0.5': { label: '半額分攤', badge: '半額', bg: '#fff3e0', color: '#e65100' },
+  '0':   { label: '不列入分攤', badge: '不列入', bg: '#f3e5f5', color: '#7b1fa2' },
 };
 
 export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, onRemove }: Props) {
@@ -176,8 +176,8 @@ export function ParticipantsTab({ participants, isOpen, onAdd, onAddHousehold, o
 }
 
 function WeightBadge({ weight }: { weight: number }) {
-  const info = WEIGHT_LABELS[String(weight)] ?? WEIGHT_LABELS['1'];
-  return <span style={{ ...styles.badge, backgroundColor: info.bg, color: info.color }}>{info.label}</span>;
+  const info = WEIGHT_CONFIG[String(weight)] ?? WEIGHT_CONFIG['1'];
+  return <span style={{ ...styles.badge, backgroundColor: info.bg, color: info.color }}>{info.badge}</span>;
 }
 
 function WeightSelect({ value, onChange }: { value: 1 | 0.5 | 0; onChange: (v: 1 | 0.5 | 0) => void }) {
@@ -187,9 +187,9 @@ function WeightSelect({ value, onChange }: { value: 1 | 0.5 | 0; onChange: (v: 1
       value={String(value)}
       onChange={e => onChange(Number(e.target.value) as 1 | 0.5 | 0)}
     >
-      <option value="1">大人 (1)</option>
-      <option value="0.5">小孩 (0.5)</option>
-      <option value="0">幼兒 (0)</option>
+      <option value="1">全額分攤</option>
+      <option value="0.5">半額分攤</option>
+      <option value="0">不列入分攤</option>
     </select>
   );
 }

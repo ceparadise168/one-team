@@ -374,6 +374,51 @@ export class CampingSplitService {
     return settlement;
   }
 
+  async updateTrip(
+    tripId: string,
+    tenantId: string,
+    input: { title?: string; startDate?: string; endDate?: string; creatorEmployeeId?: string },
+    actor: Actor,
+  ): Promise<void> {
+    const trip = await this.getTrip(tripId);
+    if (trip.tenantId !== tenantId) throw new ForbiddenError('Cannot access trip from different tenant');
+    if (trip.creatorEmployeeId !== actor.employeeId) throw new ForbiddenError('Only the trip creator can update');
+    await this.requireOpen(tripId);
+
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    if (input.title !== undefined && input.title !== trip.title) changes.title = { from: trip.title, to: input.title };
+    if (input.startDate !== undefined && input.startDate !== trip.startDate) changes.startDate = { from: trip.startDate, to: input.startDate };
+    if (input.endDate !== undefined && input.endDate !== trip.endDate) changes.endDate = { from: trip.endDate, to: input.endDate };
+    if (input.creatorEmployeeId !== undefined && input.creatorEmployeeId !== trip.creatorEmployeeId) changes.creatorEmployeeId = { from: trip.creatorEmployeeId, to: input.creatorEmployeeId };
+
+    const updated = { ...trip, ...input };
+    await this.repo.updateTrip(updated);
+
+    if (Object.keys(changes).length > 0) {
+      await this.writeAuditLog(tripId, 'UPDATE', 'TRIP', tripId, updated.title, actor, changes);
+    }
+  }
+
+  async unsettleTrip(
+    tripId: string,
+    tenantId: string,
+    actor: Actor,
+  ): Promise<void> {
+    const trip = await this.getTrip(tripId);
+    if (trip.tenantId !== tenantId) throw new ForbiddenError('Cannot access trip from different tenant');
+    if (trip.creatorEmployeeId !== actor.employeeId) throw new ForbiddenError('Only the trip creator can unsettle');
+    if (trip.status !== 'SETTLED') throw new ValidationError('Trip is not settled');
+
+    await this.repo.deleteSettlement(tripId);
+    await this.repo.updateTrip({ ...trip, status: 'OPEN' });
+
+    await this.writeAuditLog(tripId, 'DELETE', 'SETTLEMENT', tripId, trip.title, actor, null);
+  }
+
+  async listAuditLogs(tripId: string): Promise<import('../domain/camping.js').AuditLogRecord[]> {
+    return this.repo.listAuditLogs(tripId);
+  }
+
   async getSettlement(tripId: string): Promise<SettlementRecord | null> {
     return this.repo.findSettlement(tripId);
   }

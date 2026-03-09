@@ -4,7 +4,7 @@ import { CampingSplitService } from './camping-split-service.js';
 import { InMemoryCampingRepository } from '../repositories/camping-repository.js';
 import { InMemoryEmployeeBindingRepository } from '../repositories/invitation-binding-repository.js';
 import { StubLinePlatformClient } from '../line/line-platform-client.js';
-import { ForbiddenError, ValidationError } from '../errors.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
 
 const TENANT = 'test-tenant';
 
@@ -173,6 +173,79 @@ describe('CampingSplitService — joinTrip', () => {
 
     await assert.rejects(
       () => service.joinTrip({ tripId, tenantId: 'other-tenant', employeeId: 'EMP02', name: 'Bob' }),
+      (err: Error) => err instanceof ForbiddenError,
+    );
+  });
+});
+
+describe('CampingSplitService — updateTrip', () => {
+  it('updates title and dates', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Old', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await service.updateTrip(tripId, TENANT, {
+      title: 'New', startDate: '2026-04-01', endDate: '2026-04-02',
+    }, { employeeId: 'EMP01', name: 'Eric' });
+    const trip = await service.getTrip(tripId);
+    assert.equal(trip.title, 'New');
+    assert.equal(trip.startDate, '2026-04-01');
+  });
+
+  it('rejects non-creator', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await assert.rejects(
+      () => service.updateTrip(tripId, TENANT, { title: 'Hack' }, { employeeId: 'EMP02', name: 'Hacker' }),
+      (err: Error) => err instanceof ForbiddenError,
+    );
+  });
+
+  it('transfers creator', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await service.updateTrip(tripId, TENANT, {
+      creatorEmployeeId: 'EMP02',
+    }, { employeeId: 'EMP01', name: 'Eric' });
+    const trip = await service.getTrip(tripId);
+    assert.equal(trip.creatorEmployeeId, 'EMP02');
+  });
+});
+
+describe('CampingSplitService — unsettleTrip', () => {
+  it('reopens settled trip', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await service.settle(tripId, 'EMP01');
+    const settled = await service.getTrip(tripId);
+    assert.equal(settled.status, 'SETTLED');
+
+    await service.unsettleTrip(tripId, TENANT, { employeeId: 'EMP01', name: 'Eric' });
+    const reopened = await service.getTrip(tripId);
+    assert.equal(reopened.status, 'OPEN');
+    const settlement = await service.getSettlement(tripId);
+    assert.equal(settlement, null);
+  });
+
+  it('rejects non-creator', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await service.settle(tripId, 'EMP01');
+    await assert.rejects(
+      () => service.unsettleTrip(tripId, TENANT, { employeeId: 'EMP02', name: 'Other' }),
       (err: Error) => err instanceof ForbiddenError,
     );
   });

@@ -336,32 +336,31 @@ async function main() {
 
   // ── Step 3: Re-assign rich menus to all active employees ──
   console.log('\n🔗  Re-assigning rich menus to active employees...');
-  const seenUsers = new Set();
-  let assigned = 0;
-  let skipped = 0;
-
+  // Collect best status per LINE user across all tenants (APPROVED wins over PENDING)
+  const userBestStatus = new Map(); // lineUserId → { employeeId, accessStatus }
   for (const t of tenants) {
     const bindings = await queryBindingsForTenant(t.tenantId);
     for (const b of bindings) {
-      if (b.employmentStatus !== 'ACTIVE' || !b.lineUserId) {
-        skipped++;
-        continue;
+      if (b.employmentStatus !== 'ACTIVE' || !b.lineUserId) continue;
+      const existing = userBestStatus.get(b.lineUserId);
+      if (!existing || (b.accessStatus === 'APPROVED' && existing.accessStatus !== 'APPROVED')) {
+        userBestStatus.set(b.lineUserId, { employeeId: b.employeeId, accessStatus: b.accessStatus });
       }
-      // Same LINE user may appear across multiple tenants — only assign once
-      if (seenUsers.has(b.lineUserId)) {
-        skipped++;
-        continue;
-      }
-      seenUsers.add(b.lineUserId);
+    }
+  }
 
-      const menuId = b.accessStatus === 'APPROVED' ? approvedMenuId : pendingMenuId;
+  let assigned = 0;
+  let skipped = 0;
+
+  for (const [lineUserId, { employeeId, accessStatus }] of userBestStatus) {
+      const menuId = accessStatus === 'APPROVED' ? approvedMenuId : pendingMenuId;
       try {
-        await linkRichMenu(token, b.lineUserId, menuId);
+        await linkRichMenu(token, lineUserId, menuId);
         assigned++;
-        const label = b.accessStatus === 'APPROVED' ? 'approved' : 'pending';
-        console.log(`   ✓ ${b.lineUserId} (${b.employeeId}) → ${label}`);
+        const label = accessStatus === 'APPROVED' ? 'approved' : 'pending';
+        console.log(`   ✓ ${lineUserId} (${employeeId}) → ${label}`);
       } catch (err) {
-        console.log(`   ⚠ ${b.lineUserId} (${b.employeeId}) — ${err.message}`);
+        console.log(`   ⚠ ${lineUserId} (${employeeId}) — ${err.message}`);
         skipped++;
       }
     }

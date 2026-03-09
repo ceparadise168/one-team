@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 interface VolunteerActivity {
   activityId: string;
@@ -45,7 +46,7 @@ export function useActivities(apiBaseUrl: string, accessToken: string) {
 
   useEffect(() => {
     if (!accessToken) return;
-    fetch(`${apiBaseUrl}/v1/volunteer/activities?status=OPEN`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/volunteer/activities?status=OPEN`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => r.json())
@@ -65,7 +66,7 @@ export function useActivityDetail(apiBaseUrl: string, accessToken: string, activ
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/volunteer/activities/${activityId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
@@ -93,7 +94,7 @@ export function useMyActivities(apiBaseUrl: string, accessToken: string) {
       setLoading(false);
       return;
     }
-    fetch(`${apiBaseUrl}/v1/volunteer/my-activities`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/volunteer/my-activities`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => r.json())

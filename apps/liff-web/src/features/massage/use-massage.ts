@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 export interface MassageSession {
   tenantId: string;
@@ -49,7 +50,7 @@ export function useMassageSessions(apiBaseUrl: string, accessToken: string) {
     if (!accessToken) return;
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
-    fetch(`${apiBaseUrl}/v1/massage/sessions?fromDate=${today}`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/massage/sessions?fromDate=${today}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
@@ -79,7 +80,7 @@ export function useMyMassageBookings(apiBaseUrl: string, accessToken: string) {
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/massage/my-bookings`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/massage/my-bookings`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
@@ -109,7 +110,7 @@ export function useSessionSlots(apiBaseUrl: string, accessToken: string, session
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/slots`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/slots`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
@@ -256,7 +257,7 @@ export function useSessionBookings(
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/bookings`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/massage/sessions/${sessionId}/bookings`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {
@@ -372,7 +373,7 @@ export function useMassageSchedules(apiBaseUrl: string, accessToken: string) {
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/massage/schedules`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/massage/schedules`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })

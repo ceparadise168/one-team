@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 export interface CampingTrip {
   tripId: string;
@@ -90,7 +91,7 @@ export function useCampingTrips(apiBaseUrl: string, accessToken: string) {
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/liff/camping/trips`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/liff/camping/trips`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
@@ -111,7 +112,7 @@ export function useTripDetail(apiBaseUrl: string, accessToken: string, tripId: s
   const refresh = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
-    fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
@@ -186,7 +187,7 @@ export function useAuditLogs(apiBaseUrl: string, accessToken: string, tripId: st
     if (!accessToken) return;
     setLoading(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}/audit-logs`, {
+      const res = await fetchWithRetry(`${apiBaseUrl}/v1/liff/camping/trips/${tripId}/audit-logs`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!res.ok) throw new Error('載入失敗');

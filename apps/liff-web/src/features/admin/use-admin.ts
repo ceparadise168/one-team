@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 interface Employee {
   employeeId: string;
@@ -33,7 +34,7 @@ export function useEmployees(
     if (status) params.set('status', status);
     if (search) params.set('search', search);
     const url = `${apiBaseUrl}/v1/liff/tenants/${tenantId}/employees?${params.toString()}`;
-    fetch(url, {
+    fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {

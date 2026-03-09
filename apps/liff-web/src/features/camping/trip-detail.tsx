@@ -310,6 +310,9 @@ export function TripDetail() {
             onRemove={withRefresh(async (expenseId) => {
               await mutations.del(`/expenses/${expenseId}`);
             })}
+            onUpdate={withRefresh(async (expenseId, input) => {
+              await mutations.put(`/expenses/${expenseId}`, input);
+            })}
           />
         )}
 

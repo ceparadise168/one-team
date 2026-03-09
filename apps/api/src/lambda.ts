@@ -1145,6 +1145,12 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     // --- Camping: Trips ---
     /* eslint-disable @typescript-eslint/no-explicit-any -- camping route handlers cast unvalidated body */
+    const resolveActorName = async (tripId: string, employeeId: string, bodyName?: string): Promise<string> => {
+      if (bodyName) return bodyName;
+      const participant = await campingRepository.findParticipantByEmployeeId(tripId, employeeId);
+      return participant?.name ?? employeeId;
+    };
+
     const campingTripsMatch = path.match(/^\/v1\/liff\/camping\/trips$/);
     if (campingTripsMatch) {
       if (method === 'POST') {
@@ -1180,15 +1186,13 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'PUT') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
         await campingSplitService.updateTrip(tripId, principal.tenantId, {
           title: body.title as string | undefined,
           startDate: body.startDate as string | undefined,
           endDate: body.endDate as string | undefined,
           creatorEmployeeId: body.creatorEmployeeId as string | undefined,
-        }, {
-          employeeId: principal.employeeId,
-          name: (body.actorName as string) ?? principal.employeeId,
-        });
+        }, { employeeId: principal.employeeId, name: actorName });
         return jsonResponse(200, { ok: true }, responseOptions);
       }
     }
@@ -1200,7 +1204,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'POST') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         if (body.household) {
           const hh = body.household as Record<string, unknown>;
           const result = await campingSplitService.addHousehold(tripId, {
@@ -1221,15 +1226,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'PUT') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
-        await campingSplitService.updateParticipant(tripId, participantId, body as any, actor);
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        await campingSplitService.updateParticipant(tripId, participantId, body as any, { employeeId: principal.employeeId, name: actorName });
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
-        const body = JSON.parse(event.body || '{}');
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
-        await campingSplitService.removeParticipant(tripId, participantId, actor);
+        const actorName = await resolveActorName(tripId, principal.employeeId);
+        await campingSplitService.removeParticipant(tripId, participantId, { employeeId: principal.employeeId, name: actorName });
         return jsonResponse(200, { ok: true }, responseOptions);
       }
     }
@@ -1241,7 +1245,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'POST') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         const result = await campingSplitService.addCampSite(tripId, body as any, actor);
         return jsonResponse(201, result, responseOptions);
       }
@@ -1253,14 +1258,15 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'PUT') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         await campingSplitService.updateCampSite(tripId, campSiteId, body as any, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
-        const body = JSON.parse(event.body || '{}');
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         await campingSplitService.removeCampSite(tripId, campSiteId, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
@@ -1273,7 +1279,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'POST') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         const result = await campingSplitService.addExpense(tripId, body as any, actor);
         return jsonResponse(201, result, responseOptions);
       }
@@ -1285,14 +1292,15 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       if (method === 'PUT') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
         const body = parseBody(event) as Record<string, unknown>;
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId, body.actorName as string);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         await campingSplitService.updateExpense(tripId, expenseId, body as any, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
       if (method === 'DELETE') {
         const principal = await requireEmployeePrincipal({ event, authSessionService });
-        const body = JSON.parse(event.body || '{}');
-        const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+        const actorName = await resolveActorName(tripId, principal.employeeId);
+        const actor = { employeeId: principal.employeeId, name: actorName };
         await campingSplitService.removeExpense(tripId, expenseId, actor);
         return jsonResponse(200, { ok: true }, responseOptions);
       }
@@ -1318,8 +1326,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingSettleMatch && method === 'POST') {
       const tripId = campingSettleMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const body = JSON.parse(event.body || '{}');
-      const actor = { employeeId: principal.employeeId, name: (body.actorName as string) ?? principal.employeeId };
+      const actorName = await resolveActorName(tripId, principal.employeeId);
+      const actor = { employeeId: principal.employeeId, name: actorName };
       const settlement = await campingSplitService.settle(tripId, principal.employeeId, principal.tenantId, actor);
       return jsonResponse(200, settlement, responseOptions);
     }
@@ -1346,10 +1354,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (campingUnsettleMatch && method === 'POST') {
       const tripId = campingUnsettleMatch[1];
       const principal = await requireEmployeePrincipal({ event, authSessionService });
-      const body = JSON.parse(event.body || '{}');
+      const actorName = await resolveActorName(tripId, principal.employeeId);
       await campingSplitService.unsettleTrip(tripId, principal.tenantId, {
         employeeId: principal.employeeId,
-        name: (body.actorName as string) ?? principal.employeeId,
+        name: actorName,
       });
       return jsonResponse(200, { ok: true }, responseOptions);
     }

@@ -209,8 +209,10 @@ export class DynamoDbCampingRepository implements CampingRepository {
       Item: {
         pk: `CAMPING_TRIP#${log.tripId}`,
         sk: `AUDIT_LOG#${log.createdAt}#${log.logId}`,
-        entityType: 'CAMPING_AUDIT_LOG',
         ...log,
+        // Must come AFTER ...log to set DynamoDB marker; preserve domain entityType separately
+        entityType: 'CAMPING_AUDIT_LOG',
+        auditEntityType: log.entityType,
       },
     }));
   }
@@ -225,7 +227,13 @@ export class DynamoDbCampingRepository implements CampingRepository {
       },
       ScanIndexForward: false,
     }));
-    return (result.Items ?? []).map(item => stripMetadata<AuditLogRecord>(item as Record<string, unknown>)!);
+    return (result.Items ?? []).map(item => {
+      const record = item as Record<string, unknown>;
+      return {
+        ...stripMetadata<AuditLogRecord>(record)!,
+        entityType: (record.auditEntityType ?? record.entityType) as AuditLogRecord['entityType'],
+      };
+    });
   }
 
   async deleteSettlement(tripId: string): Promise<void> {

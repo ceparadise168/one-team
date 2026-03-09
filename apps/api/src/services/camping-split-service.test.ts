@@ -250,3 +250,90 @@ describe('CampingSplitService — unsettleTrip', () => {
     );
   });
 });
+
+describe('CampingSplitService — Audit Logs', () => {
+  const actor = { employeeId: 'EMP01', name: 'Eric' };
+
+  it('createTrip with actor creates audit log', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    }, actor);
+
+    const logs = await service.listAuditLogs(tripId);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].action, 'CREATE');
+    assert.equal(logs[0].entityType, 'TRIP');
+    assert.equal(logs[0].actorName, 'Eric');
+  });
+
+  it('addCampSite with actor creates audit log', async () => {
+    const { service, repo } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    }, actor);
+
+    const participants = await repo.listParticipants(tripId);
+    const { campSiteId } = await service.addCampSite(tripId, {
+      name: 'A區', cost: 3000, paidByParticipantId: participants[0].participantId,
+      memberParticipantIds: [participants[0].participantId],
+    }, actor);
+
+    const logs = await service.listAuditLogs(tripId);
+    const createLog = logs.find(l => l.action === 'CREATE' && l.entityType === 'CAMPSITE');
+    assert.ok(createLog);
+    assert.equal(createLog.entityName, 'A區');
+  });
+
+  it('updateCampSite logs field changes', async () => {
+    const { service, repo } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+
+    const participants = await repo.listParticipants(tripId);
+    const { campSiteId } = await service.addCampSite(tripId, {
+      name: 'A區', cost: 3000, paidByParticipantId: participants[0].participantId,
+      memberParticipantIds: [participants[0].participantId],
+    });
+
+    await service.updateCampSite(tripId, campSiteId, { cost: 3500 }, actor);
+
+    const logs = await service.listAuditLogs(tripId);
+    const updateLog = logs.find(l => l.action === 'UPDATE' && l.entityType === 'CAMPSITE');
+    assert.ok(updateLog);
+    assert.deepEqual(updateLog.changes, { cost: { from: 3000, to: 3500 } });
+  });
+
+  it('unsettleTrip creates DELETE SETTLEMENT log', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Trip', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+    await service.settle(tripId, 'EMP01');
+    await service.unsettleTrip(tripId, TENANT, actor);
+
+    const logs = await service.listAuditLogs(tripId);
+    const unsettleLog = logs.find(l => l.action === 'DELETE' && l.entityType === 'SETTLEMENT');
+    assert.ok(unsettleLog);
+  });
+
+  it('updateTrip logs changes', async () => {
+    const { service } = createContext();
+    const { tripId } = await service.createTrip({
+      tenantId: TENANT, title: 'Old Title', startDate: '2026-03-01', endDate: '2026-03-02',
+      creatorEmployeeId: 'EMP01', creatorName: 'Eric', creatorLineUserId: null,
+    });
+
+    await service.updateTrip(tripId, TENANT, { title: 'New Title' }, actor);
+
+    const logs = await service.listAuditLogs(tripId);
+    const updateLog = logs.find(l => l.action === 'UPDATE' && l.entityType === 'TRIP');
+    assert.ok(updateLog);
+    assert.deepEqual(updateLog.changes, { title: { from: 'Old Title', to: 'New Title' } });
+  });
+});

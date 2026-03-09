@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import liff from '@line/liff';
 import { useAuth } from '../../auth-context';
-import { useTripDetail, useTripMutations, updateTripApi } from './use-camping';
+import { useTripDetail, useTripMutations, updateTripApi, unsettleTripApi } from './use-camping';
 import { ParticipantsTab } from './participants-tab';
 import { CampSitesTab } from './campsites-tab';
 import { ExpensesTab } from './expenses-tab';
@@ -326,6 +326,9 @@ export function TripDetail() {
             accessToken={accessToken}
             onSettle={withRefresh(async () => {
               await mutations.post('/settle', {});
+            })}
+            onUnsettle={withRefresh(async () => {
+              await unsettleTripApi(apiBaseUrl, accessToken, tripId!, myName);
             })}
           />
         )}

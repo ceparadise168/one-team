@@ -11,10 +11,12 @@ interface Props {
   apiBaseUrl: string;
   accessToken: string;
   onSettle: () => Promise<void>;
+  onUnsettle?: () => Promise<void>;
 }
 
-export function SettlementTab({ trip, participants, settlement, currentEmployeeId, apiBaseUrl, accessToken, onSettle }: Props) {
+export function SettlementTab({ trip, participants, settlement, currentEmployeeId, apiBaseUrl, accessToken, onSettle, onUnsettle }: Props) {
   const [settling, setSettling] = useState(false);
+  const [unsettling, setUnsettling] = useState(false);
   const [preview, setPreview] = useState<Settlement | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -44,10 +46,23 @@ export function SettlementTab({ trip, participants, settlement, currentEmployeeI
     } finally { setSettling(false); }
   };
 
+  const handleUnsettle = async () => {
+    if (!confirm('確定要取消結算嗎？取消後可重新編輯資料再結算。')) return;
+    setUnsettling(true);
+    try {
+      await onUnsettle!();
+    } finally { setUnsettling(false); }
+  };
+
   if (settlement) {
     return (
       <div>
         <SettlementSummary settlement={settlement} nameOf={nameOf} />
+        {isCreator && onUnsettle && (
+          <button onClick={handleUnsettle} disabled={unsettling} style={styles.unsettleBtn}>
+            {unsettling ? '取消中...' : '取消結算'}
+          </button>
+        )}
       </div>
     );
   }
@@ -95,4 +110,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer', marginTop: 16,
   },
   notCreatorHint: { textAlign: 'center', fontSize: 13, color: '#999', marginTop: 16 },
+  unsettleBtn: {
+    width: '100%', padding: '12px 0', border: '1px solid #c62828', borderRadius: 8,
+    backgroundColor: '#fff', color: '#c62828', fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', marginTop: 16,
+  },
 };

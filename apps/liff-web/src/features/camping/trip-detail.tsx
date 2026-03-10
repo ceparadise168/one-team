@@ -38,7 +38,7 @@ export function TripDetail() {
   const [editCreator, setEditCreator] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  if (loading) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
+  if (loading && !detail) return <div style={cs.container}><p style={cs.loading}>載入中...</p></div>;
   if (error) return <div style={cs.container}><p style={cs.error}>{error}</p></div>;
   if (!detail) return <div style={cs.container}><p style={cs.error}>找不到行程</p></div>;
 

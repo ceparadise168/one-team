@@ -25,7 +25,7 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'update' | 'delete';
+    type: 'add' | 'update' | 'delete';
     campSiteId: string;
     campSiteName: string;
     campSiteCost: number;
@@ -48,13 +48,13 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
         paidByParticipantId: paidBy,
         memberParticipantIds: members,
       });
-      await onAddExpense({
-        description: `營位-${trimmedName}`,
-        amount: numCost,
-        paidByParticipantId: paidBy,
-        splitType: 'CUSTOM',
-        splitAmong: members,
+      setConfirmDialog({
+        type: 'add',
         campSiteId,
+        campSiteName: trimmedName,
+        campSiteCost: numCost,
+        paidByParticipantId: paidBy,
+        memberParticipantIds: members,
       });
       resetForm();
     } finally { setSubmitting(false); }
@@ -213,6 +213,7 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
         <div style={dialogStyles.overlay}>
           <div style={dialogStyles.dialog}>
             <div style={dialogStyles.title}>
+              {confirmDialog.type === 'add' && '是否將營位費用帶入費用清單？'}
               {confirmDialog.type === 'update' && '是否更新對應的費用？'}
               {confirmDialog.type === 'delete' && '是否一併刪除對應的費用？'}
             </div>
@@ -225,7 +226,16 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
                 onClick={async () => {
                   const d = confirmDialog;
                   setConfirmDialog(null);
-                  if (d.type === 'update') {
+                  if (d.type === 'add') {
+                    await onAddExpense({
+                      description: `營位-${d.campSiteName}`,
+                      amount: d.campSiteCost,
+                      paidByParticipantId: d.paidByParticipantId,
+                      splitType: 'CUSTOM',
+                      splitAmong: d.memberParticipantIds,
+                      campSiteId: d.campSiteId,
+                    });
+                  } else if (d.type === 'update') {
                     const linkedExpense = expenses.find(e => e.campSiteId === d.campSiteId);
                     if (linkedExpense) {
                       await onUpdateExpense(linkedExpense.expenseId, {

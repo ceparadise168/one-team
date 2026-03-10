@@ -242,6 +242,15 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
                         splitType: 'CUSTOM',
                         splitAmong: d.memberParticipantIds,
                       });
+                    } else {
+                      await onAddExpense({
+                        description: `營位-${d.campSiteName}`,
+                        amount: d.campSiteCost,
+                        paidByParticipantId: d.paidByParticipantId,
+                        splitType: 'CUSTOM',
+                        splitAmong: d.memberParticipantIds,
+                        campSiteId: d.campSiteId,
+                      });
                     }
                   } else if (d.type === 'delete') {
                     const linkedExpense = expenses.find(e => e.campSiteId === d.campSiteId);

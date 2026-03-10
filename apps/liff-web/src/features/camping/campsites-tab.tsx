@@ -25,7 +25,7 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'add' | 'update' | 'delete';
+    type: 'update' | 'delete';
     campSiteId: string;
     campSiteName: string;
     campSiteCost: number;
@@ -39,19 +39,22 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
     if (!name.trim() || !cost || !paidBy || selectedMembers.size === 0) return;
     setSubmitting(true);
     try {
+      const trimmedName = name.trim();
+      const numCost = Number(cost);
+      const members = [...selectedMembers];
       const campSiteId = await onAdd({
-        name: name.trim(),
-        cost: Number(cost),
+        name: trimmedName,
+        cost: numCost,
         paidByParticipantId: paidBy,
-        memberParticipantIds: [...selectedMembers],
+        memberParticipantIds: members,
       });
-      setConfirmDialog({
-        type: 'add',
-        campSiteId,
-        campSiteName: name.trim(),
-        campSiteCost: Number(cost),
+      await onAddExpense({
+        description: `營位-${trimmedName}`,
+        amount: numCost,
         paidByParticipantId: paidBy,
-        memberParticipantIds: [...selectedMembers],
+        splitType: 'CUSTOM',
+        splitAmong: members,
+        campSiteId,
       });
       resetForm();
     } finally { setSubmitting(false); }
@@ -210,7 +213,6 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
         <div style={dialogStyles.overlay}>
           <div style={dialogStyles.dialog}>
             <div style={dialogStyles.title}>
-              {confirmDialog.type === 'add' && '是否將營位費用帶入費用清單？'}
               {confirmDialog.type === 'update' && '是否更新對應的費用？'}
               {confirmDialog.type === 'delete' && '是否一併刪除對應的費用？'}
             </div>
@@ -223,16 +225,7 @@ export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd,
                 onClick={async () => {
                   const d = confirmDialog;
                   setConfirmDialog(null);
-                  if (d.type === 'add') {
-                    await onAddExpense({
-                      description: `營位-${d.campSiteName}`,
-                      amount: d.campSiteCost,
-                      paidByParticipantId: d.paidByParticipantId,
-                      splitType: 'CUSTOM',
-                      splitAmong: d.memberParticipantIds,
-                      campSiteId: d.campSiteId,
-                    });
-                  } else if (d.type === 'update') {
+                  if (d.type === 'update') {
                     const linkedExpense = expenses.find(e => e.campSiteId === d.campSiteId);
                     if (linkedExpense) {
                       await onUpdateExpense(linkedExpense.expenseId, {

@@ -81,6 +81,29 @@ export async function decideEmployeeAccess(
   }
 }
 
+export async function offboardEmployee(
+  apiBaseUrl: string,
+  accessToken: string,
+  tenantId: string,
+  employeeId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl}/v1/admin/tenants/${tenantId}/employees/${employeeId}/offboard`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || '移除失敗');
+  }
+}
+
 export async function updateEmployeePermissions(
   apiBaseUrl: string,
   accessToken: string,

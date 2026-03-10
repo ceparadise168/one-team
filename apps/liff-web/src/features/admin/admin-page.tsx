@@ -4,6 +4,7 @@ import {
   useEmployees,
   decideEmployeeAccess,
   updateEmployeePermissions,
+  offboardEmployee,
   ERROR_NO_PERMISSION,
 } from './use-admin';
 
@@ -24,6 +25,9 @@ export function AdminPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const [removeTarget, setRemoveTarget] = useState<{ employeeId: string; name: string } | null>(null);
+  const [removeConfirmInput, setRemoveConfirmInput] = useState('');
+  const [removing, setRemoving] = useState(false);
 
   const status = tab === 'pending' ? 'PENDING' as const : 'APPROVED' as const;
   const {
@@ -55,6 +59,27 @@ export function AdminPage() {
       setActionMessage((e as Error).message);
     }
   }
+
+  async function handleOffboard() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      setActionMessage(null);
+      await offboardEmployee(apiBaseUrl, accessToken, tenantId, removeTarget.employeeId);
+      setActionMessage(`已移除 ${removeTarget.name}`);
+      setRemoveTarget(null);
+      setRemoveConfirmInput('');
+      refresh();
+    } catch (e) {
+      setActionMessage((e as Error).message);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  // Check if current user has canRemove permission from employee list
+  const myRecord = employees.find(e => e.employeeId === myEmployeeId);
+  const canRemove = myRecord?.permissions.canRemove ?? false;
 
   async function handleTogglePermission(
     empId: string,
@@ -195,9 +220,52 @@ export function AdminPage() {
                   </label>
                 </div>
                 {isSelf && <p style={styles.selfNote}>無法修改自己的權限</p>}
+                {canRemove && !isSelf && (
+                  <button
+                    style={styles.removeBtn}
+                    onClick={() => setRemoveTarget({ employeeId: emp.employeeId, name: emp.nickname || emp.employeeId })}
+                  >
+                    移除員工
+                  </button>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {removeTarget && (
+        <div style={styles.dialogOverlay}>
+          <div style={styles.dialog}>
+            <p style={styles.dialogTitle}>確定要移除 {removeTarget.name}？</p>
+            <p style={styles.dialogWarning}>此操作不可逆。</p>
+            <p style={styles.dialogLabel}>請輸入員工編號確認：</p>
+            <input
+              type="text"
+              value={removeConfirmInput}
+              onChange={(e) => setRemoveConfirmInput(e.target.value)}
+              placeholder={removeTarget.employeeId}
+              style={styles.dialogInput}
+            />
+            <div style={styles.dialogActions}>
+              <button
+                onClick={() => { setRemoveTarget(null); setRemoveConfirmInput(''); }}
+                style={styles.dialogCancelBtn}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleOffboard}
+                disabled={removeConfirmInput !== removeTarget.employeeId || removing}
+                style={{
+                  ...styles.dialogConfirmBtn,
+                  opacity: removeConfirmInput !== removeTarget.employeeId || removing ? 0.4 : 1,
+                }}
+              >
+                {removing ? '移除中...' : '確認移除'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -325,4 +393,39 @@ const styles: Record<string, React.CSSProperties> = {
   },
   errorTitle: { fontSize: 18, fontWeight: 'bold', margin: '0 0 8px 0' },
   errorDesc: { fontSize: 14, color: '#666', margin: 0 },
+  removeBtn: {
+    marginTop: 10,
+    padding: '6px 14px',
+    backgroundColor: '#fff',
+    color: '#e74c3c',
+    border: '1px solid #e74c3c',
+    borderRadius: 6,
+    fontSize: 13,
+    cursor: 'pointer',
+  },
+  dialogOverlay: {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+  },
+  dialog: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 24,
+    maxWidth: 320, width: '90%',
+  },
+  dialogTitle: { fontSize: 16, fontWeight: 'bold', margin: '0 0 4px 0' },
+  dialogWarning: { fontSize: 13, color: '#e74c3c', margin: '0 0 16px 0' },
+  dialogLabel: { fontSize: 14, color: '#333', margin: '0 0 8px 0' },
+  dialogInput: {
+    width: '100%', padding: '8px 10px', border: '1px solid #ddd',
+    borderRadius: 6, fontSize: 14, boxSizing: 'border-box' as const, marginBottom: 16,
+  },
+  dialogActions: { display: 'flex', gap: 12 },
+  dialogCancelBtn: {
+    flex: 1, padding: '10px 0', backgroundColor: '#f5f5f5', color: '#333',
+    border: '1px solid #ddd', borderRadius: 8, fontSize: 14, cursor: 'pointer',
+  },
+  dialogConfirmBtn: {
+    flex: 1, padding: '10px 0', backgroundColor: '#e74c3c', color: '#fff',
+    border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+  },
 };

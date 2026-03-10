@@ -43,6 +43,7 @@ export interface ExpenseRecord {
   splitType: ExpenseSplitType;
   splitAmong: string[] | null;  // participantIds, required when CUSTOM
   createdAt: string;
+  campSiteId?: string;
 }
 
 export interface TransferInstruction {

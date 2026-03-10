@@ -42,6 +42,7 @@ export interface Expense {
   splitType: 'ALL' | 'CUSTOM';
   splitAmong: string[] | null;
   createdAt: string;
+  campSiteId?: string;
 }
 
 export interface TransferInstruction {

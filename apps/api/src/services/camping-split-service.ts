@@ -49,6 +49,7 @@ interface AddExpenseInput {
   paidByParticipantId: string;
   splitType: ExpenseSplitType;
   splitAmong: string[] | null;
+  campSiteId?: string;
 }
 
 interface JoinTripInput {
@@ -295,6 +296,7 @@ export class CampingSplitService {
       splitType: input.splitType,
       splitAmong: input.splitAmong,
       createdAt: this.options.now().toISOString(),
+      ...(input.campSiteId ? { campSiteId: input.campSiteId } : {}),
     });
     if (actor) {
       await this.writeAuditLog(tripId, 'CREATE', 'EXPENSE', expenseId, input.description, actor, null);

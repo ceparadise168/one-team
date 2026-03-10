@@ -287,16 +287,34 @@ export function TripDetail() {
         {activeTab === 'campsites' && (
           <CampSitesTab
             campSites={detail.campSites}
+            expenses={detail.expenses}
             participants={detail.participants}
             isOpen={isOpen}
-            onAdd={withRefresh(async (input) => {
-              await mutations.post('/campsites', input);
-            })}
+            onAdd={async (input) => {
+              setMutationError(null);
+              try {
+                const result = await mutations.post('/campsites', input);
+                refresh();
+                return result.campSiteId as string;
+              } catch (err) {
+                setMutationError((err as Error).message);
+                throw err;
+              }
+            }}
             onRemove={withRefresh(async (campSiteId) => {
               await mutations.del(`/campsites/${campSiteId}`);
             })}
             onUpdate={withRefresh(async (campSiteId, input) => {
               await mutations.put(`/campsites/${campSiteId}`, input);
+            })}
+            onAddExpense={withRefresh(async (input) => {
+              await mutations.post('/expenses', input);
+            })}
+            onUpdateExpense={withRefresh(async (expenseId, input) => {
+              await mutations.put(`/expenses/${expenseId}`, input);
+            })}
+            onRemoveExpense={withRefresh(async (expenseId) => {
+              await mutations.del(`/expenses/${expenseId}`);
             })}
           />
         )}

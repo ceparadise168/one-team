@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import type { CampSite, TripParticipant } from './use-camping';
+import type { CampSite, Expense, TripParticipant } from './use-camping';
 import { groupByHousehold, campingStyles as cs } from './camping-shared';
 import type React from 'react';
 
 interface Props {
   campSites: CampSite[];
+  expenses: Expense[];
   participants: TripParticipant[];
   isOpen: boolean;
-  onAdd: (input: { name: string; cost: number; paidByParticipantId: string; memberParticipantIds: string[] }) => Promise<void>;
+  onAdd: (input: { name: string; cost: number; paidByParticipantId: string; memberParticipantIds: string[] }) => Promise<string>;
   onRemove: (campSiteId: string) => Promise<void>;
   onUpdate?: (campSiteId: string, input: { name: string; cost: number; paidByParticipantId: string; memberParticipantIds: string[] }) => Promise<void>;
+  onAddExpense: (input: { description: string; amount: number; paidByParticipantId: string; splitType: 'ALL' | 'CUSTOM'; splitAmong: string[] | null; campSiteId: string }) => Promise<void>;
+  onUpdateExpense: (expenseId: string, input: { description: string; amount: number; paidByParticipantId: string; splitType: 'ALL' | 'CUSTOM'; splitAmong: string[] | null }) => Promise<void>;
+  onRemoveExpense: (expenseId: string) => Promise<void>;
 }
 
-export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove, onUpdate }: Props) {
+export function CampSitesTab({ campSites, expenses, participants, isOpen, onAdd, onRemove, onUpdate, onAddExpense, onUpdateExpense, onRemoveExpense }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -20,6 +24,14 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove,
   const [paidBy, setPaidBy] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    type: 'add' | 'update' | 'delete';
+    campSiteId: string;
+    campSiteName: string;
+    campSiteCost: number;
+    paidByParticipantId: string;
+    memberParticipantIds: string[];
+  } | null>(null);
 
   const nameOf = new Map(participants.map(p => [p.participantId, p.name]));
 
@@ -27,9 +39,17 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove,
     if (!name.trim() || !cost || !paidBy || selectedMembers.size === 0) return;
     setSubmitting(true);
     try {
-      await onAdd({
+      const campSiteId = await onAdd({
         name: name.trim(),
         cost: Number(cost),
+        paidByParticipantId: paidBy,
+        memberParticipantIds: [...selectedMembers],
+      });
+      setConfirmDialog({
+        type: 'add',
+        campSiteId,
+        campSiteName: name.trim(),
+        campSiteCost: Number(cost),
         paidByParticipantId: paidBy,
         memberParticipantIds: [...selectedMembers],
       });
@@ -64,8 +84,32 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove,
         paidByParticipantId: paidBy,
         memberParticipantIds: [...selectedMembers],
       });
+      setConfirmDialog({
+        type: 'update',
+        campSiteId: editingId,
+        campSiteName: name.trim(),
+        campSiteCost: Number(cost),
+        paidByParticipantId: paidBy,
+        memberParticipantIds: [...selectedMembers],
+      });
       resetForm();
     } finally { setSubmitting(false); }
+  };
+
+  const handleRemove = async (campSiteId: string) => {
+    const site = campSites.find(s => s.campSiteId === campSiteId);
+    const linkedExpense = expenses.find(e => e.campSiteId === campSiteId);
+    await onRemove(campSiteId);
+    if (linkedExpense && site) {
+      setConfirmDialog({
+        type: 'delete',
+        campSiteId,
+        campSiteName: site.name,
+        campSiteCost: site.cost,
+        paidByParticipantId: site.paidByParticipantId,
+        memberParticipantIds: site.memberParticipantIds,
+      });
+    }
   };
 
   const resetForm = () => {
@@ -120,7 +164,7 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove,
               {isOpen && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   {onUpdate && <button onClick={() => startEdit(site)} style={styles.editBtn}>編輯</button>}
-                  <button onClick={() => onRemove(site.campSiteId)} style={cs.removeBtn}>刪除</button>
+                  <button onClick={() => handleRemove(site.campSiteId)} style={cs.removeBtn}>刪除</button>
                 </div>
               )}
             </>
@@ -158,6 +202,59 @@ export function CampSitesTab({ campSites, participants, isOpen, onAdd, onRemove,
             <button onClick={handleSubmit} disabled={submitting} style={cs.confirmBtn}>
               {submitting ? '新增中...' : '確認'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {confirmDialog && (
+        <div style={dialogStyles.overlay}>
+          <div style={dialogStyles.dialog}>
+            <div style={dialogStyles.title}>
+              {confirmDialog.type === 'add' && '是否將營位費用帶入費用清單？'}
+              {confirmDialog.type === 'update' && '是否更新對應的費用？'}
+              {confirmDialog.type === 'delete' && '是否一併刪除對應的費用？'}
+            </div>
+            <div style={dialogStyles.detail}>
+              營位-{confirmDialog.campSiteName}，${confirmDialog.campSiteCost.toLocaleString()}
+            </div>
+            <div style={dialogStyles.actions}>
+              <button onClick={() => setConfirmDialog(null)} style={cs.cancelBtn}>否</button>
+              <button
+                onClick={async () => {
+                  const d = confirmDialog;
+                  setConfirmDialog(null);
+                  if (d.type === 'add') {
+                    await onAddExpense({
+                      description: `營位-${d.campSiteName}`,
+                      amount: d.campSiteCost,
+                      paidByParticipantId: d.paidByParticipantId,
+                      splitType: 'CUSTOM',
+                      splitAmong: d.memberParticipantIds,
+                      campSiteId: d.campSiteId,
+                    });
+                  } else if (d.type === 'update') {
+                    const linkedExpense = expenses.find(e => e.campSiteId === d.campSiteId);
+                    if (linkedExpense) {
+                      await onUpdateExpense(linkedExpense.expenseId, {
+                        description: `營位-${d.campSiteName}`,
+                        amount: d.campSiteCost,
+                        paidByParticipantId: d.paidByParticipantId,
+                        splitType: 'CUSTOM',
+                        splitAmong: d.memberParticipantIds,
+                      });
+                    }
+                  } else if (d.type === 'delete') {
+                    const linkedExpense = expenses.find(e => e.campSiteId === d.campSiteId);
+                    if (linkedExpense) {
+                      await onRemoveExpense(linkedExpense.expenseId);
+                    }
+                  }
+                }}
+                style={cs.confirmBtn}
+              >
+                是
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -220,6 +317,21 @@ function ParticipantCheckboxes({
     </div>
   );
 }
+
+const dialogStyles: Record<string, React.CSSProperties> = {
+  overlay: {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+  },
+  dialog: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 24,
+    maxWidth: 320, width: '90%', textAlign: 'center' as const,
+  },
+  title: { fontSize: 16, fontWeight: 600, marginBottom: 12 },
+  detail: { fontSize: 14, color: '#666', marginBottom: 20 },
+  actions: { display: 'flex', gap: 12, justifyContent: 'center' },
+};
 
 const styles: Record<string, React.CSSProperties> = {
   cardTitle: { fontSize: 15, fontWeight: 600 },

@@ -15,28 +15,12 @@ interface OwedPaid {
 
 export function calculateSettlement(
   participants: TripParticipantRecord[],
-  campSites: CampSiteRecord[],
+  _campSites: CampSiteRecord[],
   expenses: ExpenseRecord[],
 ): Omit<SettlementRecord, 'tripId' | 'settledAt'> {
   const ledger = new Map<string, OwedPaid>();
   for (const p of participants) {
     ledger.set(p.participantId, { owed: 0, paid: 0, breakdownParts: [] });
-  }
-
-  // --- Campsite fees (split by headcount) ---
-  for (const site of campSites) {
-    const perPerson = site.cost / site.memberParticipantIds.length;
-    for (const pid of site.memberParticipantIds) {
-      const entry = ledger.get(pid);
-      if (entry) {
-        entry.owed += perPerson;
-        entry.breakdownParts.push(`營位 ${site.name}: ${site.cost} / ${site.memberParticipantIds.length}人 = ${perPerson}`);
-      }
-    }
-    const payer = ledger.get(site.paidByParticipantId);
-    if (payer) {
-      payer.paid += site.cost;
-    }
   }
 
   // --- Expenses ---

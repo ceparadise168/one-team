@@ -80,7 +80,7 @@ describe('calculateSettlement', () => {
     assert.equal(result.transfers[0].amount, 500);
   });
 
-  it('splits campsite fees by headcount (ignoring weight)', () => {
+  it('ignores campsite data (costs should come from expenses)', () => {
     const participants = [
       makeParticipant('A', 'Alice'),
       makeParticipant('B', 'Bob'),
@@ -99,10 +99,7 @@ describe('calculateSettlement', () => {
 
     const result = calculateSettlement(participants, campSites, []);
 
-    assert.equal(result.transfers.length, 1);
-    assert.equal(result.transfers[0].fromParticipantId, 'B');
-    assert.equal(result.transfers[0].toParticipantId, 'A');
-    assert.equal(result.transfers[0].amount, 600);
+    assert.equal(result.transfers.length, 0);
   });
 
   it('handles CUSTOM split among specific people', () => {
@@ -209,16 +206,13 @@ describe('calculateSettlement', () => {
       makeParticipant('can', 'Can'),
     ];
 
-    const campSites: CampSiteRecord[] = [
-      { tripId: 'trip-1', campSiteId: 'cs1', name: '雨棚A', cost: 1224, paidByParticipantId: 'can', memberParticipantIds: ['bigS', 'bigS-spouse', 'bigS-kid1', 'bigS-kid2'] },
-      { tripId: 'trip-1', campSiteId: 'cs2', name: '非雨棚B', cost: 1020, paidByParticipantId: 'can', memberParticipantIds: ['alex', 'can'] },
-    ];
-
     const expenses: ExpenseRecord[] = [
+      { tripId: 'trip-1', expenseId: 'e-cs1', description: '營位 雨棚A', amount: 1224, paidByParticipantId: 'can', splitType: 'CUSTOM', splitAmong: ['bigS', 'bigS-spouse', 'bigS-kid1', 'bigS-kid2'], createdAt: '2026-01-01T00:00:00.000Z', campSiteId: 'cs1' },
+      { tripId: 'trip-1', expenseId: 'e-cs2', description: '營位 非雨棚B', amount: 1020, paidByParticipantId: 'can', splitType: 'CUSTOM', splitAmong: ['alex', 'can'], createdAt: '2026-01-01T00:00:00.000Z', campSiteId: 'cs2' },
       { tripId: 'trip-1', expenseId: 'e1', description: '食材', amount: 3000, paidByParticipantId: 'can', splitType: 'ALL', splitAmong: null, createdAt: '2026-01-01T00:00:00.000Z' },
     ];
 
-    const result = calculateSettlement(participants, campSites, expenses);
+    const result = calculateSettlement(participants, [], expenses);
 
     const summaryMap = new Map(result.participantSummaries.map(s => [s.participantId, s]));
 

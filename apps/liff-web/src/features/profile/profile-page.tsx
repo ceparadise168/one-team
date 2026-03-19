@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../auth-context';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 export function ProfilePage() {
   const { apiBaseUrl, tenantId, accessToken, employeeId } = useAuth();
@@ -12,7 +13,7 @@ export function ProfilePage() {
   useEffect(() => {
     async function fetchProfile() {
       try {
-        const res = await fetch(`${apiBaseUrl}/v1/liff/tenants/${tenantId}/me/profile`, {
+        const res = await fetchWithRetry(`${apiBaseUrl}/v1/liff/tenants/${tenantId}/me/profile`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!res.ok) throw new Error('Failed to load profile');

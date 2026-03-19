@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import type { Settlement } from './use-camping';
 import { SettlementSummary } from './settlement-summary';
 import { campingStyles } from './camping-shared';
+import { fetchWithRetry } from '../../fetch-with-retry';
 import type React from 'react';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
@@ -20,7 +21,7 @@ export function SharePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/v1/public/camping/trips/${tripId}/summary`)
+    fetchWithRetry(`${apiBaseUrl}/v1/public/camping/trips/${tripId}/summary`)
       .then(r => { if (!r.ok) throw new Error('載入失敗'); return r.json(); })
       .then(d => { setData(d); setError(null); })
       .catch(e => setError(e.message))

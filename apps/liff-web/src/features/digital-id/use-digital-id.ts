@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DigitalIdCardState, DigitalIdResponse } from './types.js';
+import { fetchWithRetry } from '../../fetch-with-retry';
 
 export function useDigitalId(input: {
   apiBaseUrl: string;
@@ -19,7 +20,7 @@ export function useDigitalId(input: {
     setState((prev) => ({ ...prev, isLoading: true, error: undefined }));
 
     try {
-      const response = await fetch(
+      const response = await fetchWithRetry(
         `${input.apiBaseUrl.replace(/\/$/, '')}/v1/liff/tenants/${input.tenantId}/me/digital-id`,
         {
           method: 'GET',

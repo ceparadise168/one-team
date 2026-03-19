@@ -5,13 +5,10 @@ export async function fetchWithRetry(
   init?: RequestInit
 ): Promise<Response> {
   try {
-    const res = await fetch(input, init);
-    if (res.ok) return res;
-    // Non-OK but got a response — don't retry (server-side error)
-    return res;
+    return await fetch(input, init);
   } catch {
-    // Network error — retry once after 1s
-    await new Promise((r) => setTimeout(r, 1000));
+    // Network error — retry once after a short delay
+    await new Promise((r) => setTimeout(r, 200));
     return fetch(input, init);
   }
 }

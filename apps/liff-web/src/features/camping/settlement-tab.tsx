@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Settlement, TripParticipant, CampingTrip } from './use-camping';
 import { SettlementSummary } from './settlement-summary';
+import { fetchWithRetry } from '../../fetch-with-retry';
 import type React from 'react';
 
 interface Props {
@@ -28,7 +29,7 @@ export function SettlementTab({ trip, participants, settlement, currentEmployeeI
     if (!isOpen || settlement) return;
     let cancelled = false;
     setPreviewLoading(true);
-    fetch(`${apiBaseUrl}/v1/liff/camping/trips/${trip.tripId}/settlement/preview`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/liff/camping/trips/${trip.tripId}/settlement/preview`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(res => res.ok ? res.json() : null)

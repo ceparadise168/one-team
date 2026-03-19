@@ -127,7 +127,7 @@ export function useReport(apiBaseUrl: string, accessToken: string, activityId: s
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/v1/volunteer/activities/${activityId}/report`, {
+    fetchWithRetry(`${apiBaseUrl}/v1/volunteer/activities/${activityId}/report`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => {

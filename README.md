@@ -495,4 +495,4 @@ For full external production launch, complete these in your fork:
 
 ## License
 
-MIT (recommended). Add a `LICENSE` file before public release if missing.
+MIT — see [LICENSE](LICENSE) for details.

@@ -10,8 +10,8 @@ When deploying, ALWAYS deploy both backend AND frontend:
 2. **Frontend**: Must separately upload to S3 + invalidate CloudFront
 
 Frontend apps and their deployment targets:
-- `apps/liff-web` → S3: `YOUR_LIFF_WEB_S3_BUCKET`, CloudFront: `YOUR_CLOUDFRONT_DISTRIBUTION_ID`
-- `apps/admin-web` → S3: `YOUR_ADMIN_WEB_S3_BUCKET`
+- `apps/liff-web` → S3: `<YOUR_LIFF_WEB_S3_BUCKET>`, CloudFront: `<YOUR_CLOUDFRONT_DISTRIBUTION_ID>`
+- `apps/admin-web` → S3: `<YOUR_ADMIN_WEB_S3_BUCKET>`
 
 **Critical env vars:**
 - `VITE_API_BASE_URL` must be set at build time (`.env.production` handles this for liff-web)

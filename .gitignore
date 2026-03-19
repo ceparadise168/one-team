@@ -12,4 +12,4 @@ cdk.out/
 .env
 .env.*
 !.env.example
-!.env.production
+!.env.*.example

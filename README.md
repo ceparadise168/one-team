@@ -324,7 +324,7 @@ Connect + provision + verify webhook:
 
 ```bash
 # If LINE Login uses a different channel than Messaging API, set these too:
-# export LOGIN_CHANNEL_ID="YOUR_LOGIN_CHANNEL_ID"
+# export LOGIN_CHANNEL_ID="your-login-channel-id"
 # export LOGIN_CHANNEL_SECRET="your-login-channel-secret"
 
 curl -sS -X POST "$API_URL/v1/admin/tenants/$TENANT_ID/line/connect" \
